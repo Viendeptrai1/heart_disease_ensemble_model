@@ -1,0 +1,26 @@
+# Requirements for Heart Disease Prediction Project
+# Install: pip install -r requirements.txt
+
+# Core
+numpy>=1.21.0
+pandas>=1.3.0
+
+# Visualization
+matplotlib>=3.4.0
+seaborn>=0.11.0
+
+# Machine Learning
+scikit-learn>=1.0.0
+xgboost>=1.5.0
+lightgbm>=3.3.0
+
+# Hyperparameter Optimization
+optuna>=3.0.0
+
+# Model Persistence
+joblib>=1.1.0
+
+# Jupyter
+jupyter>=1.0.0
+notebook>=6.4.0
+ipykernel>=6.0.0
