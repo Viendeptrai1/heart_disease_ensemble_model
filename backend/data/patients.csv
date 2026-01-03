@@ -1,3 +1,0 @@
-id,name,age,gender,phone,address,blood_type,cholesterol,gluc,smoke,alco,active,age_bin,BMI_Class,MAP_Class,cluster,riskLevel,healthScore,confidence,risk_score,model_used,model_key,created_at
-BN-2026-0001,A,20,Nam,,,O+,,,,,,,,,,high,0,1.0,,,,2026-01-03
-BN-2026-0002,b,19,Nam,,,O+,,,,,,,,,,high,0,1.0,1.0,,,2026-01-03
