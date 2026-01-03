@@ -330,7 +330,7 @@ Dự án được chia thành **5 bước chính**, tương ứng với 5 notebo
    - Voting strategy: Soft (sử dụng predict_proba)
 
 5. **Stacking Classifier**
-   - Base estimators: 7 models như Voting
+   - Base estimators: Random Forest, XGBoost, LightGBM
    - Meta-learner: Logistic Regression
    - Cross-validation: 5-fold
 
