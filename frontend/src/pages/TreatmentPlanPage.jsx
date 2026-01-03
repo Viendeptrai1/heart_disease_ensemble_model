@@ -95,6 +95,7 @@ const ActivePlanDropZone = ({ activePlan, onRemove }) => {
                 <defs>
                     <pattern id="water-pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
                         <motion.path
+                            initial={{ d: "M0,50 Q25,30 50,50 T100,50 T150,50" }}
                             d="M0,50 Q25,30 50,50 T100,50 T150,50"
                             fill="none"
                             stroke="#87986A"
@@ -109,6 +110,7 @@ const ActivePlanDropZone = ({ activePlan, onRemove }) => {
                             transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                         />
                         <motion.path
+                            initial={{ d: "M0,70 Q25,50 50,70 T100,70 T150,70" }}
                             d="M0,70 Q25,50 50,70 T100,70 T150,70"
                             fill="none"
                             stroke="#87986A"

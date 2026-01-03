@@ -4,11 +4,9 @@ A comprehensive machine learning system for predicting cardiovascular disease ri
 
 ## 🌟 Features
 
-- **Multi-Model Ensemble Predictions**: Combines Random Forest, Gradient Boosting, Logistic Regression, and Stacking Ensemble
-- **Dual Prediction Modes**: 
-  - Lifestyle-based predictions (cardio dataset)
-  - Clinical feature predictions (heart dataset)
-- **Model Comparison**: Compare predictions across all models to find the best confidence
+- **Multi-Model Ensemble Predictions**: Combines 9 trained models including Random Forest, XGBoost, LightGBM, Voting, Stacking ensembles, and traditional ML models
+- **Lifestyle-based Predictions**: Predicts cardiovascular disease risk using 10 lifestyle features from cardio dataset
+- **Model Comparison**: Compare predictions across all 9 models to find the best confidence
 - **Continuous Learning**: Collect new examination data and retrain models
 - **Patient Management**: Full CRUD operations for patients, medical events, and documents
 - **Treatment Planning**: Create and manage treatment plans
@@ -36,8 +34,6 @@ A comprehensive machine learning system for predicting cardiovascular disease ri
 - 4GB RAM minimum
 - 2GB free disk space
 
-### Optional
-- Docker & Docker Compose (for containerized deployment)
 
 ## 📦 Installation
 
@@ -80,24 +76,32 @@ npm install
 
 ### Development Mode
 
-#### Option 1: Using Startup Script
+#### Cách 1: Chạy bằng npm (Khuyến nghị)
 
 ```bash
-chmod +x start.sh
-./start.sh
+# Cài đặt dependencies (chỉ cần chạy 1 lần)
+npm run install:all
+
+# Chạy cả frontend và backend
+npm run dev
 ```
 
-The script will:
-1. Activate virtual environment
-2. Install dependencies (if needed)
-3. Start backend on http://localhost:8000
-4. Start frontend on http://localhost:5173
+Lệnh này sẽ tự động:
+1. Khởi động backend trên http://localhost:8000
+2. Khởi động frontend trên http://localhost:5173
 
-#### Option 2: Manual Start
+#### Cách 2: Chạy thủ công (2 terminal riêng)
 
 **Terminal 1 - Backend:**
 ```bash
-source venv/bin/activate
+# Tạo và kích hoạt virtual environment (nếu chưa có)
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Cài đặt dependencies (nếu chưa có)
+pip install -r backend/requirements.txt
+
+# Chạy backend
 cd backend
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -105,7 +109,15 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 **Terminal 2 - Frontend:**
 ```bash
 cd frontend
+npm install  # Nếu chưa cài
 npm run dev
+```
+
+#### Cách 3: Sử dụng script start.sh
+
+```bash
+chmod +x start.sh
+./start.sh
 ```
 
 ### Access the Application
@@ -115,39 +127,18 @@ npm run dev
 - **API Documentation**: http://localhost:8000/docs
 - **Alternative API Docs**: http://localhost:8000/redoc
 
-## 🐳 Docker Setup
+## 📦 Installation Scripts
 
-### Quick Docker Start
-
-```bash
-chmod +x start-docker.sh
-./start-docker.sh
-```
-
-### Manual Docker Commands
+### Cài đặt tất cả dependencies
 
 ```bash
-# Build and start services
-docker-compose up --build
+# Cài đặt cả backend và frontend
+npm run install:all
 
-# Start in detached mode
-docker-compose up -d
-
-# Stop services
-docker-compose down
-
-# View logs
-docker-compose logs -f
+# Hoặc cài đặt riêng lẻ
+npm run install:backend  # Cài Python packages
+npm run install:frontend # Cài Node packages
 ```
-
-### Environment Configuration
-
-1. Copy the environment template:
-```bash
-cp env_template.txt .env
-```
-
-2. Edit `.env` file as needed (default values should work for local development)
 
 ## 📚 API Documentation
 
@@ -176,34 +167,25 @@ Content-Type: application/json
 }
 ```
 
-#### Clinical Prediction
-```bash
-POST /predict/clinical
-Content-Type: application/json
+**Features (10):**
+- `gender`: Gender (1=Male, 0=Female)
+- `cholesterol`: Cholesterol level (1=Normal, 2=Above, 3=High)
+- `gluc`: Glucose level (1=Normal, 2=Above, 3=High)
+- `smoke`: Smoking (0=No, 1=Yes)
+- `alco`: Alcohol (0=No, 1=Yes)
+- `active`: Physical activity (0=No, 1=Yes)
+- `age_bin`: Age group (0-4)
+- `BMI_Class`: BMI category (0-3)
+- `MAP_Class`: Mean Arterial Pressure class (0-3)
+- `cluster`: K-Means cluster (0-4, tự động tính từ các features khác)
 
-{
-  "patients": [
-    {
-      "Age": 55,
-      "Sex": 1,
-      "ChestPainType": 2,
-      "RestingBP": 130,
-      "Cholesterol": 250,
-      "FastingBS": 0,
-      "RestingECG": 0,
-      "MaxHR": 150,
-      "ExerciseAngina": 0,
-      "Oldpeak": 1.5,
-      "ST_Slope": 1
-    }
-  ]
-}
-```
+**Models (9):**
+- Ensemble: Stacking, Random Forest, XGBoost, LightGBM, Voting
+- Traditional: Decision Tree, KNN, Logistic Regression, Naive Bayes
 
 #### Compare All Models
 ```bash
 POST /predict/lifestyle/compare
-POST /predict/clinical/compare
 ```
 
 ### Patient Management
@@ -233,10 +215,7 @@ GET /admin/stats                 # System statistics
 ```bash
 POST /examinations/lifestyle              # Create lifestyle exam
 PUT  /examinations/lifestyle/{id}/diagnosis   # Update diagnosis
-GET  /examinations/lifestyle/stats        # Training statistics
-POST /examinations/lifestyle/mark-trained # Mark as trained
-
-# Similar endpoints for clinical examinations
+GET  /training/stats                      # Training statistics
 ```
 
 ## 📁 Project Structure
@@ -282,10 +261,8 @@ heart_disease_ensemble_model/
 │   ├── 03_SingleModels.ipynb
 │   ├── 04_EnsembleModels.ipynb
 │   └── 05_Evaluation.ipynb
-├── docker-compose.yml
-├── Dockerfile.backend
-├── Dockerfile.frontend
-├── start.sh
+├── package.json          # Root package.json với scripts
+├── start.sh              # Script khởi động thủ công
 ├── install.sh
 ├── start-docker.sh
 └── README.md
@@ -307,9 +284,9 @@ heart_disease_ensemble_model/
 
 ### Features
 
-**Lifestyle Features:**
-- gender, age_bin, BMI_Class, MAP_Class
-- cholesterol, gluc, smoke, alco, active, history
+**Lifestyle Features (10):**
+- gender, cholesterol, gluc, smoke, alco, active
+- age_bin, BMI_Class, MAP_Class, cluster
 
 **Clinical Features:**
 - Age, Sex, ChestPainType, RestingBP
@@ -383,23 +360,6 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
-### Docker Issues
-
-**Permission denied:**
-```bash
-# Ensure Docker is running
-docker info
-
-# Check permissions
-sudo usermod -aG docker $USER
-```
-
-**Container exits immediately:**
-```bash
-# Check logs
-docker-compose logs backend
-docker-compose logs frontend
-```
 
 ### Common Errors
 

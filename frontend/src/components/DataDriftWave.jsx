@@ -1,6 +1,35 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 
+// Pure function moved OUTSIDE component to avoid closure/stale reference issues
+const generateDriftWavePath = (offset, secondary, amplitude, frequency, noise) => {
+    const width = 800;
+    const height = 120;
+    const midY = height / 2;
+
+    const safeOffset = typeof offset === 'number' && !isNaN(offset) ? offset : 0;
+    const safeAmp = typeof amplitude === 'number' && !isNaN(amplitude) ? amplitude : 15;
+    const safeFreq = typeof frequency === 'number' && !isNaN(frequency) ? frequency : 3;
+    const safeNoise = typeof noise === 'number' && !isNaN(noise) ? noise : 0.1;
+
+    const amp = secondary ? safeAmp * 0.6 : safeAmp;
+    const freq = secondary ? safeFreq * 1.3 : safeFreq;
+
+    let pathStr = `M 0,${midY} `;
+
+    for (let x = 0; x <= width; x += 4) {
+        let y = midY;
+        y += Math.sin((x / width) * Math.PI * freq + safeOffset) * amp;
+        if (safeNoise > 0) {
+            y += Math.sin(x * 0.15 + safeOffset * 2) * safeNoise * amp;
+        }
+        if (typeof y !== 'number' || isNaN(y)) y = midY;
+        pathStr += `L ${x},${y.toFixed(1)} `;
+    }
+
+    return pathStr;
+};
+
 /**
  * DataDriftWave - Animated wave visualization for data drift monitoring
  * Smooth wave = healthy model, Jagged wave = data drift detected
@@ -47,45 +76,22 @@ const DataDriftWave = ({ driftLevel = 'healthy', driftScore = 0.05 }) => {
         }
     }, [driftLevel]);
 
-    // Generate wave path with deterministic noise
-    const generateWavePath = (offset = 0, secondary = false) => {
-        const width = 800;
-        const height = 120;
-        const midY = height / 2;
-        const amp = secondary ? config.amplitude * 0.6 : config.amplitude;
-        const freq = secondary ? config.frequency * 1.3 : config.frequency;
-        const points = [];
-
-        for (let x = 0; x <= width; x += 4) {
-            let y = midY;
-            // Base sine wave
-            y += Math.sin((x / width) * Math.PI * freq + offset) * amp;
-            // Add deterministic noise for jaggedness (using sine with different frequency)
-            if (config.noise > 0) {
-                y += Math.sin(x * 0.15 + offset * 2) * config.noise * amp;
-            }
-            points.push(`${x},${y.toFixed(1)}`);
-        }
-
-        return `M 0,${midY} L ${points.join(' L ')}`;
-    };
-
-    // Generate multiple wave phases for animation
+    // Generate multiple wave phases for animation - pre-computed using module-level function
     const wavePaths = useMemo(() => [
-        generateWavePath(0),
-        generateWavePath(Math.PI * 0.5),
-        generateWavePath(Math.PI),
-        generateWavePath(Math.PI * 1.5),
-        generateWavePath(Math.PI * 2),
-    ], [config]);
+        generateDriftWavePath(0, false, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI * 0.5, false, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI, false, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI * 1.5, false, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI * 2, false, config.amplitude, config.frequency, config.noise),
+    ], [config.amplitude, config.frequency, config.noise]);
 
     const secondaryWavePaths = useMemo(() => [
-        generateWavePath(Math.PI * 0.25, true),
-        generateWavePath(Math.PI * 0.75, true),
-        generateWavePath(Math.PI * 1.25, true),
-        generateWavePath(Math.PI * 1.75, true),
-        generateWavePath(Math.PI * 2.25, true),
-    ], [config]);
+        generateDriftWavePath(Math.PI * 0.25, true, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI * 0.75, true, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI * 1.25, true, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI * 1.75, true, config.amplitude, config.frequency, config.noise),
+        generateDriftWavePath(Math.PI * 2.25, true, config.amplitude, config.frequency, config.noise),
+    ], [config.amplitude, config.frequency, config.noise]);
 
     return (
         <motion.div
@@ -148,35 +154,40 @@ const DataDriftWave = ({ driftLevel = 'healthy', driftScore = 0.05 }) => {
                     </defs>
 
                     {/* Background wave (secondary) */}
-                    <motion.path
-                        d={secondaryWavePaths[0]}
-                        fill="none"
-                        stroke={config.color}
-                        strokeWidth="2"
-                        strokeOpacity="0.3"
-                        animate={{ d: secondaryWavePaths }}
-                        transition={{
-                            duration: driftLevel === 'healthy' ? 6 : 4,
-                            repeat: Infinity,
-                            ease: 'linear',
-                        }}
-                    />
+                    {/* Background wave (secondary) */}
+                    {secondaryWavePaths && secondaryWavePaths.length > 0 && secondaryWavePaths[0] && (
+                        <motion.path
+                            initial={{ d: secondaryWavePaths[0] }}
+                            animate={{ d: secondaryWavePaths }}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth="2"
+                            strokeOpacity="0.3"
+                            transition={{
+                                duration: driftLevel === 'healthy' ? 6 : 4,
+                                repeat: Infinity,
+                                ease: 'linear',
+                            }}
+                        />
+                    )}
 
                     {/* Main wave */}
-                    <motion.path
-                        d={wavePaths[0]}
-                        fill="none"
-                        stroke="url(#waveGradient)"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        filter="url(#waveGlow)"
-                        animate={{ d: wavePaths }}
-                        transition={{
-                            duration: driftLevel === 'healthy' ? 5 : 3,
-                            repeat: Infinity,
-                            ease: 'linear',
-                        }}
-                    />
+                    {wavePaths && wavePaths.length > 0 && wavePaths[0] && (
+                        <motion.path
+                            initial={{ d: wavePaths[0] }}
+                            animate={{ d: wavePaths }}
+                            fill="none"
+                            stroke="url(#waveGradient)"
+                            strokeWidth="4"
+                            strokeLinecap="round"
+                            filter="url(#waveGlow)"
+                            transition={{
+                                duration: driftLevel === 'healthy' ? 5 : 3,
+                                repeat: Infinity,
+                                ease: 'linear',
+                            }}
+                        />
+                    )}
 
                     {/* Center line reference */}
                     <line

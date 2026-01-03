@@ -15,7 +15,9 @@ const WhatIfSlider = ({
     onChange,
     color = 'sage', // 'sage' | 'clay'
 }) => {
-    const percentage = ((value - min) / (max - min)) * 100;
+    // Ensure value is always a valid number (prevent null/undefined)
+    const safeValue = (value ?? min);
+    const percentage = Math.min(100, Math.max(0, ((safeValue - min) / (max - min)) * 100)) || 0;
     const colorClasses = color === 'clay'
         ? { track: 'bg-clay', thumb: 'bg-clay', glow: 'shadow-clay/50' }
         : { track: 'bg-sage', thumb: 'bg-sage', glow: 'shadow-sage/50' };
@@ -27,13 +29,13 @@ const WhatIfSlider = ({
                 <span className="text-moss font-semibold text-sm">{label}</span>
                 <motion.span
                     className={`text-sm font-bold px-3 py-1 rounded-full ${colorClasses.track} text-sand`}
-                    key={value}
+                    key={safeValue}
                     initial={{ scale: 1.2 }}
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 500 }}
                     style={{ borderRadius: '2rem' }}
                 >
-                    {value}{unit}
+                    {safeValue}{unit}
                 </motion.span>
             </div>
 
@@ -68,10 +70,7 @@ const WhatIfSlider = ({
                     preserveAspectRatio="none"
                 >
                     <motion.path
-                        d="M0,10 Q10,5 20,10 T40,10 T60,10 T80,10 T100,10"
-                        fill="none"
-                        stroke={color === 'clay' ? '#D57E5F' : '#87986A'}
-                        strokeWidth="1"
+                        initial={{ d: "M0,10 Q10,5 20,10 T40,10 T60,10 T80,10 T100,10" }}
                         animate={{
                             d: [
                                 "M0,10 Q10,5 20,10 T40,10 T60,10 T80,10 T100,10",
@@ -79,6 +78,9 @@ const WhatIfSlider = ({
                                 "M0,10 Q10,5 20,10 T40,10 T60,10 T80,10 T100,10",
                             ]
                         }}
+                        fill="none"
+                        stroke={color === 'clay' ? '#D57E5F' : '#87986A'}
+                        strokeWidth="1"
                         transition={{
                             duration: 2,
                             repeat: Infinity,
@@ -93,7 +95,7 @@ const WhatIfSlider = ({
                     min={min}
                     max={max}
                     step={step}
-                    value={value}
+                    value={safeValue}
                     onChange={(e) => onChange(Number(e.target.value))}
                     className="absolute w-full h-full opacity-0 cursor-pointer z-20"
                     style={{ margin: 0 }}

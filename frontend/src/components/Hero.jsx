@@ -65,8 +65,8 @@ const Hero = ({ patients = defaultPatients, isLoading = false, error = null, onP
                 >
                     {patients.map((patient, i) => {
                         const angle = i * angleStep;
-                        // Water drop size
-                        const dropSize = 140;
+                        // Water drop size - increased to fit more info
+                        const dropSize = 160;
 
                         return (
                             <div
@@ -95,6 +95,17 @@ const Hero = ({ patients = defaultPatients, isLoading = false, error = null, onP
                                         riskLevel: patient.risk === 'high' ? 'High' : patient.risk === 'medium' ? 'Medium' : 'Low',
                                         confidence: patient.confidence || patient.score,
                                         healthScore: patient.healthScore,
+                                        // Pass health metrics for accurate simulation
+                                        cholesterol: patient.cholesterol,
+                                        gluc: patient.gluc,
+                                        smoke: patient.smoke,
+                                        alco: patient.alco,
+                                        active: patient.active,
+                                        age_bin: patient.age_bin,
+                                        BMI_Class: patient.BMI_Class,
+                                        MAP_Class: patient.MAP_Class,
+                                        cluster: patient.cluster,
+                                        risk_score: patient.risk_score,
                                     })}
                                     style={{
                                         // Counter-rotate so face always visible
@@ -122,14 +133,33 @@ const Hero = ({ patients = defaultPatients, isLoading = false, error = null, onP
                                             style={{ transform: 'rotate(-45deg)' }}
                                         >
                                             {/* Content positioned in center of drop */}
-                                            <div className="flex flex-col items-center justify-center text-center px-2">
+                                            <div className="flex flex-col items-center justify-center text-center px-2 space-y-0.5">
                                                 {/* Show short ID or name */}
-                                                <span className="text-sand font-bold text-xs leading-tight mb-1 truncate max-w-[80px]">
+                                                <span className="text-sand font-bold text-xs leading-tight truncate max-w-[80px]">
                                                     {patient.name?.slice(-8) || patient.id}
                                                 </span>
+
+                                                {/* Risk Probability % - Use risk_score from best model */}
                                                 <div className="bg-sand/20 px-2 py-0.5 rounded-full backdrop-blur-sm">
-                                                    <span className="text-sand text-[10px] font-bold">
-                                                        {Math.round((patient.score || patient.confidence || 0.5) * 100)}%
+                                                    <span className="text-sand text-[11px] font-bold">
+                                                        {(() => {
+                                                            const displayValue = patient.risk_score ?? patient.score ?? patient.confidence ?? 0.5;
+                                                            console.log(`[Hero] Patient ${patient.id}: risk_score=${patient.risk_score}, score=${patient.score}, displaying=${displayValue}`);
+                                                            return (displayValue * 100).toFixed(2);
+                                                        })()}%
+                                                    </span>
+                                                </div>
+
+                                                {/* Model Name (shortened) */}
+                                                <span className="text-sand/80 text-[8px] font-medium leading-tight truncate max-w-[90px]">
+                                                    {patient.modelUsed?.split(' ')[0] || 'Stacking'}
+                                                </span>
+
+                                                {/* Confidence */}
+                                                <div className="flex items-center gap-0.5">
+                                                    <span className="text-sand/70 text-[7px]">Tin cậy:</span>
+                                                    <span className="text-sand text-[8px] font-semibold">
+                                                        {((patient.confidence || 0.5) * 100).toFixed(2)}%
                                                     </span>
                                                 </div>
                                             </div>

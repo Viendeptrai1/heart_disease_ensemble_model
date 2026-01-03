@@ -17,7 +17,8 @@ import {
     fetchModelMetrics,
     fetchModelsStatus,
     fetchConfusionMatrix,
-    fetchSystemStats
+    fetchSystemStats,
+    fetchROCCurve
 } from '../services/api';
 
 // Generate sparkline data for each metric (deterministic)
@@ -38,6 +39,8 @@ const AdminPage = () => {
     const [models, setModels] = useState([]);
     const [confusion, setConfusion] = useState({ trueNegative: 0, falsePositive: 0, falseNegative: 0, truePositive: 0 });
     const [stats, setStats] = useState({ totalPredictions: 0, uptime: 0, avgResponseTime: 0 });
+    const [rocData, setRocData] = useState(null);
+    const [rocLoading, setRocLoading] = useState(false);
 
     // Get selected model info
     const selectedModel = useMemo(() => {
@@ -88,14 +91,19 @@ const AdminPage = () => {
 
     const loadModelData = async (modelKey) => {
         try {
-            const [metricsData, confusionData] = await Promise.all([
+            setRocLoading(true);
+            const [metricsData, confusionData, rocCurveData] = await Promise.all([
                 fetchModelMetrics(modelKey),
-                fetchConfusionMatrix(modelKey)
+                fetchConfusionMatrix(modelKey),
+                fetchROCCurve(modelKey)
             ]);
             setMetrics(metricsData);
             setConfusion(confusionData);
+            setRocData(rocCurveData);
         } catch (err) {
             console.error('Error loading model data:', err);
+        } finally {
+            setRocLoading(false);
         }
     };
 
@@ -112,10 +120,6 @@ const AdminPage = () => {
         setSelectedModelKey(modelKey);
         setShowModelDropdown(false);
     };
-
-    // Group models by type
-    const lifestyleModels = models.filter(m => m.type === 'lifestyle');
-    const clinicalModels = models.filter(m => m.type === 'clinical');
 
     return (
         <div className="max-w-7xl mx-auto pb-8">
@@ -225,31 +229,10 @@ const AdminPage = () => {
                                             className="absolute top-full right-0 mt-2 w-[320px] bg-white rounded-2xl shadow-2xl overflow-hidden"
                                             style={{ zIndex: 9999 }}
                                         >
-                                            {/* Lifestyle Models */}
-                                            <div className="p-3 border-b border-sand">
-                                                <p className="text-xs font-bold text-moss/50 mb-2 px-2">LIFESTYLE MODELS (6)</p>
-                                                {lifestyleModels.map(model => (
-                                                    <motion.button
-                                                        key={model.key}
-                                                        onClick={() => handleSelectModel(model.key)}
-                                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors
-                                                            ${selectedModelKey === model.key ? 'bg-sage/20 text-sage' : 'hover:bg-sand/50 text-moss'}
-                                                        `}
-                                                        whileHover={{ x: 4 }}
-                                                    >
-                                                        <span className="flex items-center gap-2">
-                                                            <Cpu size={16} />
-                                                            {model.name}
-                                                        </span>
-                                                        <span className="text-sm font-bold">{model.accuracy}%</span>
-                                                    </motion.button>
-                                                ))}
-                                            </div>
-
-                                            {/* Clinical Models */}
+                                            {/* All Models */}
                                             <div className="p-3">
-                                                <p className="text-xs font-bold text-moss/50 mb-2 px-2">CLINICAL MODELS (4)</p>
-                                                {clinicalModels.map(model => (
+                                                <p className="text-xs font-bold text-moss/50 mb-2 px-2">MODELS ({models.length})</p>
+                                                {models.map(model => (
                                                     <motion.button
                                                         key={model.key}
                                                         onClick={() => handleSelectModel(model.key)}
@@ -279,14 +262,6 @@ const AdminPage = () => {
                                 animate={{ opacity: 1, height: 'auto' }}
                                 className="flex items-center gap-6 pt-4 border-t border-sand/50"
                             >
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs text-moss/60">Type:</span>
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium
-                                        ${selectedModel.type === 'lifestyle' ? 'bg-sage/20 text-sage' : 'bg-clay/20 text-clay'}
-                                    `}>
-                                        {selectedModel.type === 'lifestyle' ? 'Lifestyle' : 'Clinical'}
-                                    </span>
-                                </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs text-moss/60">Status:</span>
                                     <span className="flex items-center gap-1 text-xs text-sage font-medium">
@@ -347,7 +322,11 @@ const AdminPage = () => {
                     {/* Charts Row 1 - ROC & Confusion */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                         {/* ROC Chart */}
-                        <OrganicROCChart auc={metrics.auc || selectedModel?.auc} />
+                        <OrganicROCChart 
+                            data={rocData?.data} 
+                            auc={rocData?.auc || metrics.auc || selectedModel?.auc} 
+                            isLoading={rocLoading}
+                        />
 
                         {/* Confusion Matrix */}
                         <ConfusionBlobs {...confusion} />

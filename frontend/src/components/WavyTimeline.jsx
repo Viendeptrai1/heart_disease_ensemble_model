@@ -20,8 +20,11 @@ const WavyTimeline = ({ events = [] }) => {
         return path;
     };
 
-    const timelineHeight = Math.max(events.length * 150, 600);
-    const riverPath = generateRiverPath(timelineHeight);
+    const timelineHeight = events && Array.isArray(events) ? Math.max(events.length * 150, 600) : 600;
+    const safeHeight = isNaN(timelineHeight) ? 600 : timelineHeight;
+    const rawRiverPath = generateRiverPath(safeHeight);
+    // Ensure path is valid
+    const riverPath = (rawRiverPath && rawRiverPath.startsWith('M')) ? rawRiverPath : 'M 100 0 L 100 600';
 
     const handleEventClick = (eventId) => {
         setExpandedEvent(expandedEvent === eventId ? null : eventId);
@@ -59,41 +62,47 @@ const WavyTimeline = ({ events = [] }) => {
                 </defs>
 
                 {/* River shadow */}
-                <motion.path
-                    d={riverPath}
-                    fill="none"
-                    stroke="rgba(135, 152, 106, 0.15)"
-                    strokeWidth="35"
-                    strokeLinecap="round"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 2, ease: "easeInOut" }}
-                />
+                {riverPath && riverPath.startsWith('M') && (
+                    <motion.path
+                        d={riverPath}
+                        initial={{ d: riverPath, pathLength: 0 }}
+                        animate={{ d: riverPath, pathLength: 1 }}
+                        fill="none"
+                        stroke="rgba(135, 152, 106, 0.15)"
+                        strokeWidth="35"
+                        strokeLinecap="round"
+                        transition={{ duration: 2, ease: "easeInOut" }}
+                    />
+                )}
 
                 {/* Main river */}
-                <motion.path
-                    d={riverPath}
-                    fill="none"
-                    stroke="url(#riverGradient)"
-                    strokeWidth="20"
-                    strokeLinecap="round"
-                    filter="url(#flowTexture)"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 2, ease: "easeInOut" }}
-                />
+                {riverPath && riverPath.startsWith('M') && (
+                    <motion.path
+                        d={riverPath}
+                        initial={{ d: riverPath, pathLength: 0 }}
+                        animate={{ d: riverPath, pathLength: 1 }}
+                        fill="none"
+                        stroke="url(#riverGradient)"
+                        strokeWidth="20"
+                        strokeLinecap="round"
+                        filter="url(#flowTexture)"
+                        transition={{ duration: 2, ease: "easeInOut" }}
+                    />
+                )}
 
                 {/* River highlight */}
-                <motion.path
-                    d={riverPath}
-                    fill="none"
-                    stroke="rgba(255, 255, 255, 0.3)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 2, ease: "easeInOut", delay: 0.3 }}
-                />
+                {riverPath && riverPath.startsWith('M') && (
+                    <motion.path
+                        d={riverPath}
+                        initial={{ d: riverPath, pathLength: 0 }}
+                        animate={{ d: riverPath, pathLength: 1 }}
+                        fill="none"
+                        stroke="rgba(255, 255, 255, 0.3)"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        transition={{ duration: 2, ease: "easeInOut", delay: 0.3 }}
+                    />
+                )}
             </svg>
 
             {/* Event Nodes (Stones) */}

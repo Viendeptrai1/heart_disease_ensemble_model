@@ -1,31 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import BubbleChart from '../components/BubbleChart';
 import LiquidGauge from '../components/LiquidGauge';
 import WhatIfSlider from '../components/WhatIfSlider';
-import { fetchPatients } from '../services/api';
-
-// Mock SHAP Feature Data
-const mockFeatures = [
-    { feature: "Đau Ngực", importance: 0.45, type: "risk" },
-    { feature: "Nhịp Tim Tối Đa", importance: 0.32, type: "protective" },
-    { feature: "Cholesterol", importance: 0.28, type: "risk" },
-    { feature: "Huyết Áp", importance: 0.22, type: "risk" },
-    { feature: "Tuổi", importance: 0.18, type: "risk" },
-    { feature: "Vận Động", importance: 0.15, type: "protective" },
-    { feature: "Đường Huyết", importance: 0.12, type: "risk" },
-    { feature: "Kết Quả ECG", importance: 0.08, type: "protective" },
-];
-
-// Mock Patient Data
-const mockPatient = {
-    id: "P-042",
-    age: 58,
-    gender: "Nam",
-    riskLevel: "High",
-    confidence: 0.92,
-};
+import { fetchPatients, compareAllModels, fetchFeatureImportance } from '../services/api';
 
 // Initial Simulation Parameters
 const initialSimParams = {
@@ -33,6 +12,9 @@ const initialSimParams = {
     maxHeartRate: 145,
     bloodPressure: 140,
     bloodSugar: 120,
+    bmi: 24,
+    age: 55,
+    active: 0,
 };
 
 /**
@@ -50,47 +32,294 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
         enabled: !patientProp, // Only fetch if no patient prop
     });
 
-    // Use prop patient, local selection, or fallback to mock
+    // Use prop patient, local selection, or fallback to null
     const patient = patientProp ?? selectedLocalPatient ?? null;
 
     const [simParams, setSimParams] = useState(initialSimParams);
-    const [features, setFeatures] = useState(mockFeatures);
+    const [features, setFeatures] = useState([]);
 
-    // Calculate simulated confidence based on parameter changes
-    const simulatedConfidence = useMemo(() => {
+    // State for selected model simulation
+    const [selectedModelKey, setSelectedModelKey] = useState('cardio_stacking');
+    const [isSimulating, setIsSimulating] = useState(false);
+    const [debouncedSimParams, setDebouncedSimParams] = useState(initialSimParams);
+
+    // Initialize simulation params from patient data when patient changes
+    useEffect(() => {
+        if (patient) {
+            // Map encoded values back to raw values for sliders
+            // cholesterol: 1=<200, 2=200-240, 3=>240 → use midpoint
+            const cholesterolMap = { 1: 180, 2: 220, 3: 260 };
+            const glucoseMap = { 1: 90, 2: 110, 3: 140 };
+            const bmiMap = { 0: 17, 1: 22, 2: 27, 3: 32 };
+            const mapMap = { 0: 85, 1: 105, 2: 130, 3: 160 };
+
+            setSimParams({
+                cholesterol: cholesterolMap[patient.cholesterol] ?? 200,
+                maxHeartRate: patient.maxHeartRate ?? 150,
+                bloodPressure: mapMap[patient.MAP_Class] ?? 120,
+                bloodSugar: glucoseMap[patient.gluc] ?? 100,
+                bmi: bmiMap[patient.BMI_Class] ?? 24,
+                age: patient.age ?? 55,
+                active: patient.active ?? 0,
+                smoke: patient.smoke ?? 0,
+                alco: patient.alco ?? 0,
+            });
+
+            // Reset user changes flag when switching patients
+            setHasUserChanges(false);
+            setPredictionResult(null); // Clear previous simulation results
+        }
+    }, [patient]);
+
+    // Debounce simulation params updates
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSimParams(simParams);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [simParams]);
+
+    // Mapping helper functions
+    const getAgeBin = (age) => {
+        if (age < 35) return 0;
+        if (age < 45) return 1;
+        if (age < 55) return 2;
+        if (age < 65) return 3;
+        return 4;
+    };
+
+    const getCholesterolClass = (val) => {
+        if (val < 200) return 1;
+        if (val < 240) return 2;
+        return 3;
+    };
+
+    const getGlucoseClass = (val) => {
+        if (val < 100) return 1;
+        if (val < 126) return 2;
+        return 3;
+    };
+
+    const getBMIClass = (val) => {
+        if (val < 18.5) return 0; // Underweight (mapped to 0? Backend expects 0-3 usually)
+        if (val < 25) return 1;   // Normal
+        if (val < 30) return 2;   // Overweight
+        return 3;                 // Obese
+    };
+
+    const getMAPClass = (systolic) => {
+        // Approximate MAP class from Systolic BP
+        // 0: Low (< 90), 1: Normal (90-120), 2: High (120-140), 3: Very High (> 140)
+        if (systolic < 90) return 0;
+        if (systolic < 120) return 1;
+        if (systolic < 140) return 2;
+        return 3;
+    };
+
+    const estimateCluster = (metrics, age) => {
+        let riskScore = 0;
+
+        // TĂNG BIÊN ĐỘ - Mỗi yếu tố có trọng số cao hơn
+        if (metrics.cholesterol >= 3) riskScore += 2.5;      // Cholesterol cao: +2.5
+        else if (metrics.cholesterol >= 2) riskScore += 1.5; // Cholesterol trung bình: +1.5
+
+        if (metrics.glucose >= 3) riskScore += 2.5;          // Đường huyết cao: +2.5
+        else if (metrics.glucose >= 2) riskScore += 1.5;     // Đường huyết trung bình: +1.5
+
+        if (metrics.bmi_class >= 3) riskScore += 2.0;        // Béo phì: +2.0
+        else if (metrics.bmi_class >= 2) riskScore += 1.2;   // Thừa cân: +1.2
+
+        if (metrics.blood_pressure >= 3) riskScore += 2.5;   // Huyết áp rất cao: +2.5
+        else if (metrics.blood_pressure >= 2) riskScore += 1.5; // Huyết áp cao: +1.5
+
+        if (metrics.smoking === 1) riskScore += 2.0;         // Hút thuốc: +2.0
+        if (metrics.alcohol === 1) riskScore += 1.0;         // Uống rượu: +1.0
+        if (metrics.active === 0) riskScore += 1.5;          // Không vận động: +1.5
+
+        // Tuổi có tác động lớn hơn
+        if (age >= 65) riskScore += 2.5;
+        else if (age >= 55) riskScore += 1.5;
+        else if (age >= 45) riskScore += 0.8;
+
+        // Phân cụm với ngưỡng mới (tổng điểm cao hơn)
+        if (riskScore >= 8) return 4;   // Rủi ro rất cao
+        if (riskScore >= 5) return 3;   // Rủi ro cao
+        if (riskScore >= 3) return 2;   // Rủi ro trung bình
+        if (riskScore >= 1.5) return 1; // Rủi ro thấp
+        return 0;                        // Rủi ro rất thấp
+    };
+
+    // State for prediction result
+    const [predictionResult, setPredictionResult] = useState(null);
+
+    // Fetch feature importance for the patient (debounced with simulation params)
+    useEffect(() => {
+        const fetchImportance = async () => {
+            if (!patient) return;
+
+            try {
+                // Create patient data for feature importance using debounced params
+                const currentFeatures = {
+                    cholesterol: getCholesterolClass(debouncedSimParams.cholesterol),
+                    glucose: getGlucoseClass(debouncedSimParams.bloodSugar),
+                    smoking: debouncedSimParams.smoke || 0,
+                    alcohol: debouncedSimParams.alco || 0,
+                    active: debouncedSimParams.active || 0,
+                    bmi_class: getBMIClass(debouncedSimParams.bmi),
+                    blood_pressure: getMAPClass(debouncedSimParams.bloodPressure),
+                };
+
+                const cluster = estimateCluster(currentFeatures, debouncedSimParams.age);
+
+                const patientData = {
+                    gender: patient.gender === 'Nam' || patient.gender === 'male' ? 1 : 0,
+                    cholesterol: currentFeatures.cholesterol,
+                    gluc: currentFeatures.glucose,
+                    smoke: currentFeatures.smoking,
+                    alco: currentFeatures.alcohol,
+                    active: currentFeatures.active,
+                    age_bin: getAgeBin(debouncedSimParams.age),
+                    BMI_Class: currentFeatures.bmi_class,
+                    MAP_Class: currentFeatures.blood_pressure,
+                    cluster: cluster
+                };
+
+                const importanceData = await fetchFeatureImportance(patientData);
+
+                // Map feature importance to display format
+                const featureMapping = {
+                    'cholesterol': { name: 'Cholesterol', type: 'risk' },
+                    'MAP_Class': { name: 'Huyết Áp (MAP)', type: 'risk' },
+                    'BMI_Class': { name: 'BMI', type: 'risk' },
+                    'age_bin': { name: 'Tuổi', type: 'risk' },
+                    'active': { name: 'Vận Động', type: 'protective' },
+                    'gluc': { name: 'Đường Huyết', type: 'risk' },
+                    'smoke': { name: 'Hút Thuốc', type: 'risk' },
+                    'alco': { name: 'Uống Rượu', type: 'risk' },
+                    'cluster': { name: 'Nhóm Rủi Ro', type: 'risk' },
+                    'gender': { name: 'Giới Tính', type: 'neutral' },
+                };
+
+                const formattedFeatures = Object.entries(importanceData).map(([key, value]) => ({
+                    feature: featureMapping[key]?.name || key,
+                    importance: value,
+                    type: featureMapping[key]?.type || 'neutral'
+                })).sort((a, b) => b.importance - a.importance);
+
+                setFeatures(formattedFeatures);
+            } catch (error) {
+                console.error('Error fetching feature importance:', error);
+                // Fallback to empty features
+                setFeatures([]);
+            }
+        };
+
+        fetchImportance();
+    }, [patient, debouncedSimParams]);
+
+    // State to track if user has made any changes to sliders
+    const [hasUserChanges, setHasUserChanges] = React.useState(false);
+
+    // Effect to run simulation ONLY when user changes params (not on initial mount)
+    useEffect(() => {
+        const runSimulation = async () => {
+            if (!patient) return;
+
+            // CRITICAL: Only run simulation if user has made changes
+            // This prevents auto-running on mount which causes different results
+            if (!hasUserChanges) return;
+
+            setIsSimulating(true);
+
+            try {
+                // Map raw simulation params to model input features
+                const currentFeatures = {
+                    cholesterol: getCholesterolClass(debouncedSimParams.cholesterol),
+                    glucose: getGlucoseClass(debouncedSimParams.bloodSugar),
+                    smoking: debouncedSimParams.smoke || 0,
+                    alcohol: debouncedSimParams.alco || 0,
+                    active: debouncedSimParams.active || 0,
+                    bmi_class: getBMIClass(debouncedSimParams.bmi),
+                    blood_pressure: getMAPClass(debouncedSimParams.bloodPressure),
+                };
+
+                const cluster = estimateCluster(currentFeatures, debouncedSimParams.age);
+
+                const inputs = {
+                    gender: patient.gender === 'Nam' || patient.gender === 'male' ? 1 : 0,
+                    cholesterol: currentFeatures.cholesterol,
+                    gluc: currentFeatures.glucose,
+                    smoke: currentFeatures.smoking,
+                    alco: currentFeatures.alcohol,
+                    active: currentFeatures.active,
+                    age_bin: getAgeBin(debouncedSimParams.age),
+                    BMI_Class: currentFeatures.bmi_class,
+                    MAP_Class: currentFeatures.blood_pressure,
+                    cluster: cluster
+                };
+
+                const result = await compareAllModels(inputs); // Using existing API
+                setPredictionResult(result);
+            } catch (error) {
+                console.error("Simulation failed:", error);
+            } finally {
+                setIsSimulating(false);
+            }
+        };
+
+        runSimulation();
+    }, [debouncedSimParams, patient, hasUserChanges]);
+
+    // Get Risk Score (Probability of Disease) from selected model
+    const simulatedRiskScore = useMemo(() => {
+        // 1. If we have a simulation result from the backend
+        if (predictionResult) {
+            const modelResult = predictionResult.all_models.find(m => m.model_key === selectedModelKey);
+            // USE EXACT risk_score from backend model (NO MODIFICATION)
+            // Each model returns different risk_score based on its own prediction
+            console.log(`[DiagnosticsPage] Selected model: ${selectedModelKey}, risk_score: ${modelResult?.risk_score}`);
+            return modelResult ? modelResult.risk_score : 0.5;
+        }
+
+        // 2. Fallback to initial patient data if no simulation yet
         if (!patient) return 0.5;
-        const baseConfidence = patient.confidence ?? 0.5;
 
-        // Simple simulation logic - adjust based on slider changes
-        const cholesterolEffect = (initialSimParams.cholesterol - simParams.cholesterol) * 0.001;
-        const heartRateEffect = (simParams.maxHeartRate - initialSimParams.maxHeartRate) * 0.0005;
-        const bpEffect = (initialSimParams.bloodPressure - simParams.bloodPressure) * 0.0008;
-        const sugarEffect = (initialSimParams.bloodSugar - simParams.bloodSugar) * 0.0006;
+        // SIMPLIFIED: Use patient's risk_score if available (consistent with Dashboard)
+        // This ensures the initial display matches what user sees in Dashboard/Hero
+        if (patient.risk_score !== undefined && patient.risk_score !== null) {
+            console.log(`[DiagnosticsPage] Using patient.risk_score: ${patient.risk_score}`);
+            return patient.risk_score;
+        }
 
-        const newConfidence = Math.max(0.1, Math.min(0.99,
-            baseConfidence + cholesterolEffect + heartRateEffect + bpEffect + sugarEffect
-        ));
+        // Fallback: Use confidence as risk score directly
+        // Patient confidence is probability of the predicted risk level
+        console.log(`[DiagnosticsPage] Fallback to confidence: ${patient.confidence ?? 0.5}`);
+        return patient.confidence ?? 0.5;
+    }, [predictionResult, selectedModelKey, patient]);
 
-        return newConfidence;
-    }, [simParams, patient]);
+    const simulatedRiskLevel = simulatedRiskScore > 0.5 ? 'High' : 'Low';
 
-    // Determine simulated risk level
-    const simulatedRiskLevel = simulatedConfidence > 0.5 ? 'High' : 'Low';
-
-    // Update simulation parameters
-    const handleParamChange = useCallback((param, value) => {
-        setSimParams(prev => ({ ...prev, [param]: value }));
-    }, []);
+    // Model options for selector
+    // Model options for selector - MUST match keys in backend/main.py
+    const modelOptions = [
+        { key: 'cardio_stacking', name: 'Stacking Ensemble (Best)' },
+        { key: 'cardio_voting', name: 'Voting Ensemble' },
+        { key: 'cardio_lightgbm', name: 'LightGBM' },
+        { key: 'cardio_gb', name: 'XGBoost (Gradient Boosting)' },
+        { key: 'cardio_rf', name: 'Random Forest' },
+        { key: 'cardio_lr', name: 'Logistic Regression' },
+        { key: 'cardio_dt', name: 'Decision Tree' },
+        { key: 'cardio_knn', name: 'K-Nearest Neighbors' },
+        { key: 'cardio_nb', name: 'Naive Bayes' },
+    ];
 
     // Handle feature click for details
     const handleFeatureClick = useCallback((feature) => {
         console.log('Feature clicked:', feature);
-        // Could open a modal with more details
     }, []);
 
     // Handle patient selection
     const handleSelectPatient = (p) => {
-        // Transform to expected format - use actual data from CSV
         setSelectedLocalPatient({
             id: p.id,
             name: p.name,
@@ -98,8 +327,15 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
             gender: p.gender === 'Nam' || p.gender === 'male' ? 'Nam' : 'Nữ',
             riskLevel: p.riskLevel === 'high' ? 'High' : p.riskLevel === 'medium' ? 'Medium' : 'Low',
             confidence: p.confidence || (p.healthScore || 70) / 100,
+            risk_score: p.risk_score, // CRITICAL: Pass risk_score for consistency
         });
     };
+
+    // Update simulation parameters
+    const handleParamChange = useCallback((param, value) => {
+        setSimParams(prev => ({ ...prev, [param]: value }));
+        setHasUserChanges(true); // Mark that user has made changes
+    }, []);
 
     // If no patient selected, show patient selection screen
     if (!patient) {
@@ -191,17 +427,20 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
                                             </div>
 
                                             {/* Risk indicator */}
-                                            <div
-                                                className={`px-2 py-1 text-xs font-medium rounded-full
+                                            <div className="flex flex-col items-end">
+                                                <span className={`px-2 py-0.5 text-xs font-bold rounded-full mb-1
                                                     ${p.riskLevel === 'high'
                                                         ? 'bg-clay/20 text-clay'
                                                         : p.riskLevel === 'medium'
                                                             ? 'bg-amber-100 text-amber-700'
                                                             : 'bg-sage/20 text-sage'
                                                     }
-                                                `}
-                                            >
-                                                {p.riskLevel === 'high' ? 'Cao' : p.riskLevel === 'medium' ? 'TB' : 'Thấp'}
+                                                `}>
+                                                    Tỷ lệ: {((p.risk_score ?? 0.5) * 100).toFixed(2)}%
+                                                </span>
+                                                <span className="text-[10px] text-moss/50 uppercase font-bold">
+                                                    {p.riskLevel === 'high' ? 'Cao' : p.riskLevel === 'medium' ? 'TB' : 'Thấp'}
+                                                </span>
                                             </div>
                                         </div>
                                     </motion.div>
@@ -326,20 +565,21 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
                     </div>
 
                     {/* Risk Badge */}
-                    <motion.div
-                        className={`px-6 py-2 font-bold text-sand
-                            ${patient.riskLevel === 'High' ? 'bg-clay'
-                                : patient.riskLevel === 'Medium' ? 'bg-amber-500'
-                                    : 'bg-sage'}
-                        `}
-                        style={{ borderRadius: '2rem' }}
-                        animate={{ scale: [1, 1.05, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                    >
-                        {patient.riskLevel === 'High' ? '⚠️ Rủi Ro Cao'
-                            : patient.riskLevel === 'Medium' ? '🔶 Rủi Ro TB'
-                                : '✓ Rủi Ro Thấp'}
-                    </motion.div>
+                    {/* Risk Badge */}
+                    <div className="flex flex-col items-end">
+                        <span className={`px-3 py-1 text-sm font-bold rounded-full
+                                ${simulatedRiskScore > 0.5 ? 'bg-clay text-white'
+                                : simulatedRiskScore > 0.2 ? 'bg-amber-500 text-white'
+                                    : 'bg-sage text-white'}
+                            `}>
+                            Tỷ lệ Tim Mạch: {(simulatedRiskScore * 100).toFixed(2)}%
+                        </span>
+                        <span className="text-xs text-moss/60 mt-1 font-medium">
+                            {simulatedRiskScore > 0.5 ? 'Nguy cơ Cao'
+                                : simulatedRiskScore > 0.2 ? 'Nguy cơ Trung Bình'
+                                    : 'Nguy cơ Thấp'}
+                        </span>
+                    </div>
                 </div>
             </motion.header>
 
@@ -378,10 +618,10 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
                     }}
                 >
                     <LiquidGauge
-                        value={simulatedConfidence}
+                        value={simulatedRiskScore}
                         riskLevel={simulatedRiskLevel}
                         size={220}
-                        label="Độ Tin Cậy Dự Đoán"
+                        label="Tỷ lệ Rủi ro Tim Mạch"
                     />
                 </motion.section>
             </div>
@@ -396,22 +636,38 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
                     borderRadius: '20% 20% 40% 40% / 5% 5% 10% 10%',
                 }}
             >
-                <div className="flex items-center gap-3 mb-6">
-                    <motion.div
-                        className="w-10 h-10 bg-sage/20 flex items-center justify-center text-xl"
-                        style={{ borderRadius: '50% 50% 30% 70% / 50% 70% 30% 50%' }}
-                        animate={{ rotate: [0, 10, -10, 0] }}
-                        transition={{ duration: 4, repeat: Infinity }}
-                    >
-                        🔬
-                    </motion.div>
-                    <div>
-                        <h2 className="text-xl font-bold text-moss">
-                            Mô Phỏng "What-If"
-                        </h2>
-                        <p className="text-moss/60 text-sm">
-                            Điều chỉnh các thông số để xem rủi ro thay đổi theo thời gian thực
-                        </p>
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                        <motion.div
+                            className="w-10 h-10 bg-sage/20 flex items-center justify-center text-xl"
+                            style={{ borderRadius: '50% 50% 30% 70% / 50% 70% 30% 50%' }}
+                            animate={{ rotate: isSimulating ? 360 : 0 }}
+                            transition={{ duration: 1, repeat: isSimulating ? Infinity : 0, ease: "linear" }}
+                        >
+                            🔬
+                        </motion.div>
+                        <div>
+                            <h2 className="text-xl font-bold text-moss">
+                                Mô Phỏng "What-If" AI Thực
+                            </h2>
+                            <p className="text-moss/60 text-sm">
+                                Dự đoán Real-time với model backend
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Model Selector */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-moss/70">Model:</span>
+                        <select
+                            value={selectedModelKey}
+                            onChange={(e) => setSelectedModelKey(e.target.value)}
+                            className="px-3 py-1.5 rounded-lg bg-white/60 border border-sage/30 text-sm font-bold text-moss focus:outline-none focus:ring-2 focus:ring-sage/50"
+                        >
+                            {modelOptions.map(opt => (
+                                <option key={opt.key} value={opt.key}>{opt.name}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 
@@ -427,17 +683,7 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
                         onChange={(v) => handleParamChange('cholesterol', v)}
                     />
                     <WhatIfSlider
-                        label="Nhịp Tim Tối Đa (bpm)"
-                        value={simParams.maxHeartRate}
-                        min={60}
-                        max={200}
-                        step={1}
-                        unit=""
-                        color="sage"
-                        onChange={(v) => handleParamChange('maxHeartRate', v)}
-                    />
-                    <WhatIfSlider
-                        label="Huyết Áp Tâm Thu (mmHg)"
+                        label="Huyết Áp TT (mmHg)"
                         value={simParams.bloodPressure}
                         min={80}
                         max={200}
@@ -456,28 +702,95 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
                         color="clay"
                         onChange={(v) => handleParamChange('bloodSugar', v)}
                     />
+                    <WhatIfSlider
+                        label="Chỉ Số BMI"
+                        value={simParams.bmi}
+                        min={15}
+                        max={40}
+                        step={0.5}
+                        unit=""
+                        color={simParams.bmi > 25 ? 'clay' : 'sage'}
+                        onChange={(v) => handleParamChange('bmi', v)}
+                    />
+                    <WhatIfSlider
+                        label="Tuổi"
+                        value={simParams.age}
+                        min={30}
+                        max={90}
+                        step={1}
+                        unit=" tuổi"
+                        color="clay"
+                        onChange={(v) => handleParamChange('age', v)}
+                    />
+                    <WhatIfSlider
+                        label="Vận Động (0=Không, 1=Có)"
+                        value={simParams.active}
+                        min={0}
+                        max={1}
+                        step={1}
+                        unit=""
+                        color="sage"
+                        onChange={(v) => handleParamChange('active', v)}
+                    />
+                    <WhatIfSlider
+                        label="Hút Thuốc (0=Không, 1=Có)"
+                        value={simParams.smoke || 0}
+                        min={0}
+                        max={1}
+                        step={1}
+                        unit=""
+                        color="clay"
+                        onChange={(v) => handleParamChange('smoke', v)}
+                    />
+                    <WhatIfSlider
+                        label="Uống Rượu (0=Không, 1=Có)"
+                        value={simParams.alco || 0}
+                        min={0}
+                        max={1}
+                        step={1}
+                        unit=""
+                        color="clay"
+                        onChange={(v) => handleParamChange('alco', v)}
+                    />
                 </div>
 
                 {/* Simulation Result */}
                 <motion.div
-                    className="mt-8 p-4 glass text-center"
+                    className="mt-8 p-4 glass text-center relative overflow-hidden"
                     style={{ borderRadius: '2rem' }}
-                    key={simulatedConfidence.toFixed(2)}
+                    key={`${selectedModelKey}-${simulatedRiskScore.toFixed(2)}`}
                     initial={{ scale: 0.95 }}
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring' }}
                 >
-                    <span className="text-moss/70 text-sm">Rủi Ro Mô Phỏng: </span>
+                    {isSimulating && (
+                        <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center backdrop-blur-sm">
+                            <span className="animate-pulse font-bold text-sage">Đang tính toán...</span>
+                        </div>
+                    )}
+
+                    <span className="text-moss/70 text-sm">Tỷ lệ Rủi ro Dự Đoán ({modelOptions.find(m => m.key === selectedModelKey)?.name}): </span>
                     <span className={`font-bold text-lg ${simulatedRiskLevel === 'High' ? 'text-clay' : 'text-sage'}`}>
-                        {(simulatedConfidence * 100).toFixed(1)}%
+                        {(simulatedRiskScore * 100).toFixed(2)}%
                     </span>
-                    {simulatedConfidence !== patient.confidence && (
+                    {patient && (
                         <span className="ml-2 text-sm">
-                            {simulatedConfidence < patient.confidence ? (
-                                <span className="text-sage">↓ Giảm {((patient.confidence - simulatedConfidence) * 100).toFixed(1)}%</span>
-                            ) : (
-                                <span className="text-clay">↑ Tăng {((simulatedConfidence - patient.confidence) * 100).toFixed(1)}%</span>
-                            )}
+                            {(
+                                () => {
+                                    // Calculate base risk score for original patient
+                                    const baseRisk = patient.riskLevel?.toLowerCase() === 'high'
+                                        ? (patient.confidence ?? 0.5)
+                                        : (1 - (patient.confidence ?? 0.5));
+
+                                    const diff = simulatedRiskScore - baseRisk;
+
+                                    if (Math.abs(diff) < 0.001) return null;
+
+                                    return diff > 0
+                                        ? <span className="text-clay">↑ Tăng {(Math.abs(diff) * 100).toFixed(2)}%</span>
+                                        : <span className="text-sage">↓ Giảm {(Math.abs(diff) * 100).toFixed(2)}%</span>;
+                                }
+                            )()}
                         </span>
                     )}
                 </motion.div>
@@ -507,20 +820,20 @@ const DiagnosticsPage = ({ patient: patientProp, onBack }) => {
                         </defs>
                         {/* Area fill */}
                         <motion.path
+                            initial={{ d: "M0,80 Q50,70 100,60 T200,45 T300,55 T400,40 L400,100 L0,100 Z", opacity: 0 }}
                             d="M0,80 Q50,70 100,60 T200,45 T300,55 T400,40 L400,100 L0,100 Z"
                             fill="url(#trend-gradient)"
-                            initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.8 }}
                         />
                         {/* Line */}
                         <motion.path
+                            initial={{ d: "M0,80 Q50,70 100,60 T200,45 T300,55 T400,40", pathLength: 0 }}
                             d="M0,80 Q50,70 100,60 T200,45 T300,55 T400,40"
                             fill="none"
                             stroke="#D57E5F"
                             strokeWidth="3"
                             strokeLinecap="round"
-                            initial={{ pathLength: 0 }}
                             animate={{ pathLength: 1 }}
                             transition={{ duration: 1.5, delay: 0.5 }}
                         />

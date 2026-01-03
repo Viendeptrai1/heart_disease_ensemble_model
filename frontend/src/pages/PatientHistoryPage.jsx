@@ -102,9 +102,14 @@ const PatientSelector = ({ patients, onSelect, searchQuery, onSearchChange }) =>
                         </div>
 
                         {/* Risk Badge */}
-                        <span className={`px-3 py-1 text-xs font-medium border rounded-full ${getRiskColor(patient.riskLevel)}`}>
-                            {getRiskLabel(patient.riskLevel)}
-                        </span>
+                        <div className="flex flex-col items-end">
+                            <span className={`px-3 py-1 text-xs font-bold border rounded-full ${getRiskColor(patient.riskLevel)}`}>
+                                Tỷ lệ: {((patient.riskLevel?.toLowerCase() === 'high' ? (patient.confidence || 0.5) : (1 - (patient.confidence || 0.5))) * 100).toFixed(0)}%
+                            </span>
+                            <span className="text-[10px] text-moss/50 mt-1 font-semibold uppercase">
+                                {patient.riskLevel === 'high' ? 'Cao' : patient.riskLevel === 'medium' ? 'TB' : 'Thấp'}
+                            </span>
+                        </div>
                     </motion.button>
                 ))}
             </div>

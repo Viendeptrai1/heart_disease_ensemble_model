@@ -1,7 +1,48 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 
-const HealthBlob = ({ healthScore = 50, size = 120 }) => {
+// Pure function moved OUTSIDE component to avoid closure/stale reference issues
+const generateWavePath = (offset, amplitude, frequency, size, normalized) => {
+    const safeOffset = typeof offset === 'number' && !isNaN(offset) ? offset : 0;
+    const safeAmp = typeof amplitude === 'number' && !isNaN(amplitude) ? amplitude : 5;
+    const safeFreq = typeof frequency === 'number' && !isNaN(frequency) ? frequency : 3;
+    const safeS = typeof size === 'number' && !isNaN(size) && size > 0 ? size : 120;
+    const safeNorm = typeof normalized === 'number' && !isNaN(normalized) ? Math.max(0, Math.min(1, normalized)) : 0.5;
+
+    const fillHeight = safeS * (1 - safeNorm * 0.85 - 0.08);
+
+    let pathStr = `M 0,${safeS} `;
+
+    for (let x = 0; x <= safeS; x += 5) {
+        let y = fillHeight +
+            Math.sin((x / safeS) * Math.PI * safeFreq + safeOffset) * safeAmp +
+            Math.sin((x / safeS) * Math.PI * safeFreq * 0.5 + safeOffset * 1.3) * safeAmp * 0.5;
+
+        if (typeof y !== 'number' || isNaN(y)) y = fillHeight;
+        pathStr += `L ${x.toFixed(1)},${y.toFixed(1)} `;
+    }
+
+    pathStr += `L ${safeS},${safeS} Z`;
+
+    return pathStr;
+};
+
+const HealthBlob = ({ healthScore: initialHealthScore = 50, size: initialSize = 120 }) => {
+    // Aggressive sanitization
+    const safeHealthScore = useMemo(() => {
+        const score = Number(initialHealthScore);
+        return isNaN(score) ? 50 : Math.max(0, Math.min(100, score));
+    }, [initialHealthScore]);
+
+    const safeSize = useMemo(() => {
+        const s = Number(initialSize);
+        return isNaN(s) || s <= 0 ? 120 : s;
+    }, [initialSize]);
+
+    // Derived values to use in render
+    const healthScore = safeHealthScore;
+    const size = safeSize;
+
     // healthScore: 0 (worst) to 100 (best)
     // Lower score = spiky, clay colored
     // Higher score = rounder, sage colored
@@ -77,21 +118,46 @@ const HealthBlob = ({ healthScore = 50, size = 120 }) => {
 
     const status = getStatus();
 
-    // Generate wave path for liquid effect
-    const generateWavePath = (offset, amplitude, frequency) => {
-        const s = size;
-        const fillHeight = s * (1 - (healthScore / 100) * 0.85 - 0.08);
-        const points = [];
+    // Fallback path for when calculations fail
+    const fallbackPath = `M 0,${safeSize} L ${safeSize},${safeSize} Z`;
 
-        for (let x = 0; x <= s; x += 2) {
-            const y = fillHeight +
-                Math.sin((x / s) * Math.PI * frequency + offset) * amplitude +
-                Math.sin((x / s) * Math.PI * frequency * 0.5 + offset * 1.3) * amplitude * 0.5;
-            points.push(`${x},${y}`);
-        }
+    // Pre-compute ALL wave animation paths to ensure they're never undefined
+    const waveAnimations = useMemo(() => {
+        const s = safeSize;
+        const norm = safeHealthScore / 100;
+        const fallback = `M 0,${s} L ${s},${s} Z`;
 
-        return `M 0,${s} L ${points.join(' L ')} L ${s},${s} Z`;
-    };
+        const backWave = [
+            generateWavePath(0, 5, 3, s, norm),
+            generateWavePath(Math.PI, 5, 3, s, norm),
+            generateWavePath(Math.PI * 2, 5, 3, s, norm),
+        ].map(p => (p && p.startsWith('M')) ? p : fallback);
+
+        const middleWave = [
+            generateWavePath(Math.PI / 2, 6, 2.5, s, norm),
+            generateWavePath(Math.PI * 1.5, 6, 2.5, s, norm),
+            generateWavePath(Math.PI * 2.5, 6, 2.5, s, norm),
+        ].map(p => (p && p.startsWith('M')) ? p : fallback);
+
+        const frontWave = [
+            generateWavePath(Math.PI, 4, 4, s, norm),
+            generateWavePath(Math.PI * 2, 4, 4, s, norm),
+            generateWavePath(Math.PI * 3, 4, 4, s, norm),
+        ].map(p => (p && p.startsWith('M')) ? p : fallback);
+
+        return { backWave, middleWave, frontWave };
+    }, [safeSize, safeHealthScore]);
+
+    // Pre-compute bubble cy values with validation
+    const bubbleCyValues = useMemo(() => {
+        const s = safeSize;
+        const norm = safeHealthScore / 100;
+        const values = [s, s * (1 - norm * 0.75), s * (1 - norm * 0.6)];
+        // Ensure strictly numbers
+        const safeValues = values.map(v => (typeof v === 'number' && !isNaN(v)) ? v : s);
+        // Double check length
+        return safeValues.length === 3 ? safeValues : [s, s, s];
+    }, [safeSize, safeHealthScore]);
 
     // Generate organic blob path for clipping
     const containerPath = useMemo(() => {
@@ -106,9 +172,11 @@ const HealthBlob = ({ healthScore = 50, size = 120 }) => {
         `;
     }, [size]);
 
-    // Unique ID for this instance's clip path
-    const clipId = useMemo(() => `health-blob-clip-${Math.random().toString(36).substr(2, 9)}`, []);
-    const gradientId = useMemo(() => `health-liquid-gradient-${Math.random().toString(36).substr(2, 9)}`, []);
+
+    // Unique ID for this instance's clip path - use component instance count
+    const instanceId = React.useId();
+    const clipId = `health-blob-clip${instanceId}`;
+    const gradientId = `health-liquid-gradient${instanceId}`;
 
     return (
         <div className="flex flex-col items-center gap-3">
@@ -186,79 +254,67 @@ const HealthBlob = ({ healthScore = 50, size = 120 }) => {
                     {/* Liquid fill with waves */}
                     <g clipPath={`url(#${clipId})`}>
                         {/* Back wave */}
-                        <motion.path
-                            d={generateWavePath(0, 5, 3)}
-                            fill={blobConfig.secondaryColor}
-                            opacity={0.5}
-                            animate={{
-                                d: [
-                                    generateWavePath(0, 5, 3),
-                                    generateWavePath(Math.PI, 5, 3),
-                                    generateWavePath(Math.PI * 2, 5, 3),
-                                ]
-                            }}
-                            transition={{
-                                duration: 4,
-                                repeat: Infinity,
-                                ease: 'linear',
-                            }}
-                        />
+                        {waveAnimations.backWave && waveAnimations.backWave.length > 0 && waveAnimations.backWave[0] && (
+                            <motion.path
+                                initial={{ d: waveAnimations.backWave[0] }}
+                                animate={{ d: waveAnimations.backWave }}
+                                fill={blobConfig.secondaryColor}
+                                opacity={0.5}
+                                transition={{
+                                    duration: 4,
+                                    repeat: Infinity,
+                                    ease: 'linear',
+                                }}
+                            />
+                        )}
 
                         {/* Middle wave */}
-                        <motion.path
-                            d={generateWavePath(Math.PI / 2, 6, 2.5)}
-                            fill={blobConfig.color}
-                            opacity={0.7}
-                            animate={{
-                                d: [
-                                    generateWavePath(Math.PI / 2, 6, 2.5),
-                                    generateWavePath(Math.PI * 1.5, 6, 2.5),
-                                    generateWavePath(Math.PI * 2.5, 6, 2.5),
-                                ]
-                            }}
-                            transition={{
-                                duration: 3,
-                                repeat: Infinity,
-                                ease: 'linear',
-                            }}
-                        />
+                        {waveAnimations.middleWave && waveAnimations.middleWave.length > 0 && waveAnimations.middleWave[0] && (
+                            <motion.path
+                                initial={{ d: waveAnimations.middleWave[0] }}
+                                animate={{ d: waveAnimations.middleWave }}
+                                fill={blobConfig.color}
+                                opacity={0.7}
+                                transition={{
+                                    duration: 3,
+                                    repeat: Infinity,
+                                    ease: 'linear',
+                                }}
+                            />
+                        )}
 
                         {/* Front wave */}
-                        <motion.path
-                            d={generateWavePath(Math.PI, 4, 4)}
-                            fill={`url(#${gradientId})`}
-                            animate={{
-                                d: [
-                                    generateWavePath(Math.PI, 4, 4),
-                                    generateWavePath(Math.PI * 2, 4, 4),
-                                    generateWavePath(Math.PI * 3, 4, 4),
-                                ]
-                            }}
-                            transition={{
-                                duration: 2.5,
-                                repeat: Infinity,
-                                ease: 'linear',
-                            }}
-                        />
+                        {waveAnimations.frontWave && waveAnimations.frontWave.length > 0 && waveAnimations.frontWave[0] && (
+                            <motion.path
+                                initial={{ d: waveAnimations.frontWave[0] }}
+                                animate={{ d: waveAnimations.frontWave }}
+                                fill={`url(#${gradientId})`}
+                                transition={{
+                                    duration: 2.5,
+                                    repeat: Infinity,
+                                    ease: 'linear',
+                                }}
+                            />
+                        )}
 
                         {/* Bubbles */}
-                        {[
+                        {bubbleCyValues && bubbleCyValues.length === 3 && [
                             { cx: 0.25, r: 3, delay: 0 },
                             { cx: 0.43, r: 4, delay: 0.6 },
                             { cx: 0.61, r: 2.5, delay: 1.2 },
                             { cx: 0.79, r: 3.5, delay: 1.8 },
                         ].map((bubble, i) => (
                             <motion.circle
-                                key={i}
+                                key={`bubble-${i}`}
                                 cx={size * bubble.cx}
-                                cy={size}
-                                r={bubble.r}
-                                fill="rgba(255,255,255,0.5)"
+                                initial={{ cy: size, opacity: 0, scale: 0.5 }}
                                 animate={{
-                                    cy: [size, size * (1 - (healthScore / 100) * 0.75), size * (1 - (healthScore / 100) * 0.6)],
+                                    cy: bubbleCyValues,
                                     opacity: [0, 0.7, 0],
                                     scale: [0.5, 1, 0.3],
                                 }}
+                                r={bubble.r}
+                                fill="rgba(255,255,255,0.5)"
                                 transition={{
                                     duration: 2.5 + i * 0.3,
                                     repeat: Infinity,

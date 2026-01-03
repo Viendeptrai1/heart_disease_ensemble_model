@@ -22,17 +22,47 @@ export const fetchPatientRisks = async () => {
         const response = await apiClient.get('/patients');
 
         // Transform to match frontend Hero component format
-        return response.data.map((patient) => ({
-            id: patient.id,
-            name: patient.id, // Use patient ID as display name
-            displayName: patient.name, // Keep actual name for other uses
-            age: patient.age,
-            gender: patient.gender,
-            risk: patient.riskLevel, // 'high', 'medium', 'low' from CSV
-            score: patient.healthScore / 100, // Convert 0-100 to 0-1
-            confidence: patient.confidence,
-            healthScore: patient.healthScore,
-        }));
+        return response.data.map((patient) => {
+            // Use risk_score from model if available (most accurate)
+            // If not available, use 0.5 as unknown/neutral
+            const riskProbability = patient.risk_score ?? 0.5;
+
+            // Calculate risk level based on actual probability
+            let actualRiskLevel;
+            if (riskProbability >= 0.7) {
+                actualRiskLevel = 'high';      // RED (≥70%)
+            } else if (riskProbability >= 0.4) {
+                actualRiskLevel = 'medium';    // YELLOW (40-69%)
+            } else {
+                actualRiskLevel = 'low';       // GREEN (<40%)
+            }
+
+            return {
+                id: patient.id,
+                name: patient.id, // Use patient ID as display name
+                displayName: patient.name, // Keep actual name for other uses
+                age: patient.age,
+                gender: patient.gender,
+                risk: actualRiskLevel, // USE CALCULATED risk level (based on probability)
+                score: riskProbability, // Risk probability (0-1) - same as risk_score
+                confidence: patient.confidence, // Keep original confidence (0-1)
+                healthScore: patient.healthScore,
+                // Model info for display
+                modelUsed: patient.model_used || 'Stacking Ensemble', // Model name
+                modelKey: patient.model_key || 'cardio_stacking', // Model key
+                // Health metrics for accurate simulation in DiagnosticsPage
+                cholesterol: patient.cholesterol,
+                gluc: patient.gluc,
+                smoke: patient.smoke,
+                alco: patient.alco,
+                active: patient.active,
+                age_bin: patient.age_bin,
+                BMI_Class: patient.BMI_Class,
+                MAP_Class: patient.MAP_Class,
+                cluster: patient.cluster,
+                risk_score: patient.risk_score, // Keep original risk_score from model
+            };
+        });
     } catch (error) {
         console.error('API Error:', error);
         throw error;
@@ -88,8 +118,8 @@ export const calculateMetrics = (patients) => {
 };
 
 /**
- * Fetch SHAP explanation for a clinical patient
- * @param {Object} patientData - Clinical patient data matching ClinicalInput schema
+ * Fetch SHAP explanation for a lifestyle patient
+ * @param {Object} patientData - Lifestyle patient data matching LifestyleInput schema
  * @returns {Promise} Object with feature importance values
  */
 export const fetchSHAPExplanation = async (patientData) => {
@@ -103,18 +133,31 @@ export const fetchSHAPExplanation = async (patientData) => {
 };
 
 /**
- * Fetch clinical prediction for patients
- * @param {Array} patients - Array of clinical patient data
- * @returns {Promise} Array of predictions
+ * Fetch feature importance for a patient prediction
+ * @param {Object} patientData - Lifestyle patient data matching LifestyleInput schema
+ * @returns {Promise} Object with feature importance values mapped to feature names
  */
-export const fetchClinicalPrediction = async (patients) => {
+export const fetchFeatureImportance = async (patientData) => {
     try {
-        const response = await apiClient.post('/predict/clinical', {
-            patients: patients
-        });
+        const response = await apiClient.post('/explain/feature-importance', patientData);
         return response.data;
     } catch (error) {
-        console.error('Clinical API Error:', error);
+        console.error('Feature Importance API Error:', error);
+        throw error;
+    }
+};
+
+/**
+ * Fetch ROC curve data for a specific model
+ * @param {string} modelKey - Model key (e.g., 'cardio_stacking', 'cardio_rf')
+ * @returns {Promise} Object with { model, auc, data: [{fpr, tpr, threshold}] }
+ */
+export const fetchROCCurve = async (modelKey = 'cardio_stacking') => {
+    try {
+        const response = await apiClient.get(`/admin/roc-curve?model=${modelKey}`);
+        return response.data;
+    } catch (error) {
+        console.error('ROC Curve API Error:', error);
         throw error;
     }
 };
@@ -133,7 +176,7 @@ export const checkBackendHealth = async () => {
 };
 
 /**
- * Compare predictions from ALL LIFESTYLE models for a single patient
+ * Compare predictions from ALL models for a single patient
  * Returns results from each model for comparison dialog
  * @param {Object} patientData - Health metrics matching LifestyleInput schema
  * @returns {Promise} Object with all_models array, best_model, and consensus
@@ -143,23 +186,7 @@ export const compareAllModels = async (patientData) => {
         const response = await apiClient.post('/predict/lifestyle/compare', patientData);
         return response.data;
     } catch (error) {
-        console.error('Compare Lifestyle Models API Error:', error);
-        throw error;
-    }
-};
-
-/**
- * Compare predictions from ALL CLINICAL models for a single patient
- * Returns results from each clinical model for comparison dialog
- * @param {Object} patientData - Clinical data matching ClinicalInput schema
- * @returns {Promise} Object with all_models array, best_model, and consensus
- */
-export const compareClinicalModels = async (patientData) => {
-    try {
-        const response = await apiClient.post('/predict/clinical/compare', patientData);
-        return response.data;
-    } catch (error) {
-        console.error('Compare Clinical Models API Error:', error);
+        console.error('Compare Models API Error:', error);
         throw error;
     }
 };
@@ -170,7 +197,7 @@ export const compareClinicalModels = async (patientData) => {
 
 
 /**
- * Fetch training statistics for both lifestyle and clinical data
+ * Fetch training statistics for lifestyle data
  * @returns {Promise} Training stats object
  */
 export const fetchTrainingStats = async () => {
@@ -198,20 +225,6 @@ export const fetchLifestyleExaminations = async () => {
 };
 
 /**
- * Fetch clinical examinations
- * @returns {Promise} Array of clinical examinations
- */
-export const fetchClinicalExaminations = async () => {
-    try {
-        const response = await apiClient.get('/examinations/clinical');
-        return response.data;
-    } catch (error) {
-        console.error('Clinical Examinations API Error:', error);
-        throw error;
-    }
-};
-
-/**
  * Create a lifestyle examination with auto prediction
  * @param {Object} examData - Examination data
  * @returns {Promise} Created examination with prediction
@@ -228,7 +241,7 @@ export const createLifestyleExamination = async (examData) => {
 
 /**
  * Update doctor diagnosis for an examination
- * @param {string} type - 'lifestyle' or 'clinical'
+ * @param {string} type - 'lifestyle'
  * @param {number} examId - Examination ID
  * @param {number} diagnosis - 0 or 1
  * @returns {Promise} Updated examination
@@ -246,8 +259,8 @@ export const updateExaminationDiagnosis = async (type, examId, diagnosis) => {
 };
 
 /**
- * Export training data for a specific type
- * @param {string} type - 'lifestyle' or 'clinical'
+ * Export training data for lifestyle
+ * @param {string} type - 'lifestyle'
  * @returns {Promise} Training data
  */
 export const exportTrainingData = async (type) => {

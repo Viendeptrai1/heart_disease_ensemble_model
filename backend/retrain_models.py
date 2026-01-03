@@ -73,14 +73,15 @@ def retrain_lifestyle_models(df: pd.DataFrame):
     """Retrain lifestyle (cardio) models with new data"""
     log("Starting lifestyle models retraining...")
     
-    feature_cols = ['gender', 'age_bin', 'BMI_Class', 'MAP_Class', 'cholesterol', 
-                   'gluc', 'smoke', 'alco', 'active', 'history']
+    # Feature columns matching feature_names.npy order
+    feature_cols = ['gender', 'cholesterol', 'gluc', 'smoke', 'alco', 'active', 
+                   'age_bin', 'BMI_Class', 'MAP_Class', 'cluster']
     
     X = df[feature_cols].values
     y = df['target'].values
     
     # Load existing scaler
-    scaler_path = os.path.join(MODELS_DIR, 'cardio_scaler.joblib')
+    scaler_path = os.path.join(MODELS_DIR, 'scaler.pkl')
     scaler = joblib.load(scaler_path)
     X_scaled = scaler.transform(X)
     
@@ -123,10 +124,10 @@ def retrain_lifestyle_models(df: pd.DataFrame):
     
     # Save updated models
     log("  - Saving models...")
-    joblib.dump(rf, os.path.join(MODELS_DIR, 'cardio_rf.joblib'))
-    joblib.dump(gb, os.path.join(MODELS_DIR, 'cardio_gb.joblib'))
-    joblib.dump(lr, os.path.join(MODELS_DIR, 'cardio_lr.joblib'))
-    joblib.dump(stacking, os.path.join(MODELS_DIR, 'cardio_stacking.joblib'))
+    joblib.dump(rf, os.path.join(MODELS_DIR, 'ensemble_randomforest.pkl'))
+    joblib.dump(gb, os.path.join(MODELS_DIR, 'ensemble_xgboost.pkl'))
+    joblib.dump(lr, os.path.join(MODELS_DIR, 'single_logisticregression.pkl'))
+    joblib.dump(stacking, os.path.join(MODELS_DIR, 'ensemble_stacking.pkl'))
     
     log("Lifestyle models retraining completed!")
     return True

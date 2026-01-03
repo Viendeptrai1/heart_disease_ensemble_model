@@ -191,8 +191,7 @@ const TrainingDashboardPage = ({ onBack }) => {
                                             {trainingStats.total.total_examinations}
                                         </div>
                                         <div className="mt-2 text-xs text-moss/50">
-                                            Lifestyle: {trainingStats.lifestyle.total_examinations} |
-                                            Clinical: {trainingStats.clinical.total_examinations}
+                                            Lifestyle: {trainingStats.lifestyle.total_examinations}
                                         </div>
                                     </motion.div>
 

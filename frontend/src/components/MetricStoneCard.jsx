@@ -47,7 +47,7 @@ const MetricStoneCard = ({
 
     return (
         <motion.div
-            className={`relative p-6 bg-gradient-to-br ${colors.bg} backdrop-blur-sm shadow-lg overflow-hidden`}
+            className={`relative p-6 bg-gradient-to-br ${colors.bg} backdrop-blur-sm shadow-lg overflow-hidden min-h-[180px]`}
             style={{ borderRadius: stoneShapes[shapeIndex] }}
             initial={{ opacity: 0, y: 30, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -64,25 +64,27 @@ const MetricStoneCard = ({
             }}
         >
             {/* Background sparkline */}
-            <div className="absolute inset-0 opacity-40">
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={sparklineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                        <defs>
-                            <linearGradient id={`gradient-${index}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={colors.stroke} stopOpacity={0.4} />
-                                <stop offset="100%" stopColor={colors.stroke} stopOpacity={0} />
-                            </linearGradient>
-                        </defs>
-                        <Area
-                            type="monotone"
-                            dataKey="value"
-                            stroke={colors.stroke}
-                            strokeWidth={2}
-                            fill={`url(#gradient-${index})`}
-                        />
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
+            {sparklineData && sparklineData.length > 0 && (
+                <div className="absolute inset-0 opacity-40">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={sparklineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                            <defs>
+                                <linearGradient id={`gradient-${index}`} x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor={colors.stroke} stopOpacity={0.4} />
+                                    <stop offset="100%" stopColor={colors.stroke} stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                            <Area
+                                type="monotone"
+                                dataKey="value"
+                                stroke={colors.stroke}
+                                strokeWidth={2}
+                                fill={`url(#gradient-${index})`}
+                            />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
 
             {/* Content */}
             <div className="relative z-10">

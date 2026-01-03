@@ -15,7 +15,9 @@ const ConfusionBlobs = ({
 
     // Calculate sizes based on values (min 60px, max 140px)
     const getSize = (value) => {
-        const ratio = value / total;
+        if (!total || total === 0) return 60;
+        const safeValue = value || 0;
+        const ratio = safeValue / total;
         return Math.max(60, Math.min(140, 60 + ratio * 300));
     };
 

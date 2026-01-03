@@ -10,14 +10,14 @@ import numpy as np
 # import shap
 
 from schemas import (
-    LifestyleBatch, ClinicalBatch, PredictionResponse,
-    ClinicalInput, LifestyleInput,
+    LifestyleBatch, PredictionResponse,
+    LifestyleInput,
     Patient, MedicalEvent, EKGDataPoint, MedicalDocument,
     Treatment, TreatmentPlanInput, TreatmentPlanResponse,
     ModelMetrics, ModelStatus, ConfusionMatrix, SystemStats,
     PatientCreateInput, MedicalEventCreateInput, DocumentCreateInput,
     # Continuous Learning schemas
-    LifestyleExaminationInput, ClinicalExaminationInput,
+    LifestyleExaminationInput,
     ExaminationResponse, DiagnosisUpdateInput, TrainingDataStats
 )
 from model_loader import model_loader
@@ -45,15 +45,22 @@ def startup_event():
 @app.post("/predict/lifestyle", response_model=List[PredictionResponse])
 async def predict_lifestyle(batch: LifestyleBatch):
     """
-    Multi-Model Prediction Pipeline - Runs ALL models and selects best confidence
-    Features: [gender, age_bin, BMI_Class, MAP_Class, cholesterol, gluc, smoke, alco, active, history]
+    Multi-Model Prediction Pipeline - Runs ALL 9 models and selects best confidence
+    Features: [gender, cholesterol, gluc, smoke, alco, active, age_bin, BMI_Class, MAP_Class, cluster]
     
-    Models used:
-    - TabNet + GCN Hybrid (Deep Learning)
-    - Stacking Ensemble (RF + GB + LR + XGB)
-    - Random Forest
-    - Gradient Boosting
+    9 Models used (4 Single + 5 Ensemble):
+    Single Models:
     - Logistic Regression
+    - K-Nearest Neighbors
+    - Naive Bayes
+    - Decision Tree
+    
+    Ensemble Models:
+    - Random Forest
+    - XGBoost (Gradient Boosting)
+    - LightGBM
+    - Voting Ensemble
+    - Stacking Ensemble
     
     Returns prediction from model with highest confidence.
     """
@@ -71,136 +78,21 @@ async def predict_lifestyle(batch: LifestyleBatch):
         # 3. Run ALL available models
         model_predictions = {}
         
-        # Define all cardio models to run
+        # Define all cardio models to run (ONLY REAL MODELS)
         cardio_models = [
             ('cardio_stacking', 'Stacking Ensemble'),
             ('cardio_rf', 'Random Forest'),
             ('cardio_gb', 'Gradient Boosting'),
             ('cardio_lr', 'Logistic Regression'),
             ('cardio_lightgbm', 'LightGBM'),
-            ('cardio_baggingsvm', 'Bagging SVM'),
-            ('cardio_blending', 'Blending'),
-            ('cardio_hardvoting', 'Hard Voting'),
-            ('cardio_softvoting', 'Soft Voting'),
-            ('cardio_nystroemsgd', 'Nystroem SGD'),
+            ('cardio_voting', 'Voting Ensemble'),
             ('cardio_dt', 'Decision Tree'),
             ('cardio_knn', 'K-Nearest Neighbors'),
-            ('cardio_mlp', 'Multi-Layer Perceptron'),
-            ('cardio_sgd', 'SGD Classifier'),
+            ('cardio_nb', 'Naive Bayes'),
         ]
         
         # Run all available models
         for model_key, model_name in cardio_models:
-            model = model_loader.get_model(model_key)
-            if model is not None:
-                try:
-                    probs = model.predict_proba(X_scaled)[:, 1]
-                    model_predictions[model_name] = probs
-                except Exception as e:
-                    print(f"Warning: Error running {model_key}: {e}")
-        
-        # 4. Run TabNet (mock)
-        tabnet = model_loader.get_model('tabnet')
-        if tabnet is not None:
-            try:
-                explain_matrix, _ = tabnet.explain(X_scaled)
-                tabnet_probs = tabnet.predict_proba(X_scaled)[:, 1]
-                model_predictions['TabNet'] = tabnet_probs
-            except Exception as e:
-                print(f"Warning: Error running TabNet: {e}")
-                explain_matrix = np.zeros((n_patients, X_scaled.shape[1]))
-        
-        # 5. Run TabNet + GCN Hybrid (if batch size >= 2)
-        # Note: GCN is currently mocked, so we skip the graph construction
-        # if n_patients >= 2:
-        #     probs_for_gcn = tabnet_probs.reshape(-1, 1)
-        #     X_combined = np.hstack([X_scaled, explain_matrix, probs_for_gcn])
-        #     
-        #     k = min(5, n_patients - 1)
-        #     if k < 1: k = 1
-        #     
-        #     adj_matrix = kneighbors_graph(X_combined, n_neighbors=k, mode='connectivity', include_self=False)
-        #     edge_index = torch.tensor(adj_matrix.nonzero(), dtype=torch.long)
-        #     
-        #     x_tensor = torch.tensor(X_combined, dtype=torch.float)
-        #     gcn = model_loader.get_model('gcn')
-        #     
-        #     with torch.no_grad():
-        #         logits = gcn(x_tensor, edge_index)
-        #         gcn_probs = torch.softmax(logits, dim=1)[:, 1].numpy()
-        #     
-        #     model_predictions['TabNet-GCN Hybrid'] = gcn_probs
-        
-        # 6. Select BEST result for each patient (highest confidence)
-        results = []
-        for i in range(n_patients):
-            best_model = None
-            best_prob = None
-            best_confidence = 0
-            
-            for model_name, probs in model_predictions.items():
-                prob = float(probs[i])
-                confidence = prob if prob > 0.5 else 1 - prob
-                
-                if confidence > best_confidence:
-                    best_confidence = confidence
-                    best_prob = prob
-                    best_model = model_name
-            
-            # Get feature importance from explain_matrix
-            contributing_factors = dict(zip(df.columns, explain_matrix[i])) if i < len(explain_matrix) else {}
-            
-            results.append(PredictionResponse(
-                risk_score=best_prob,
-                risk_level="High" if best_prob > 0.5 else "Low",
-                model_used=f"{best_model} (Best of {len(model_predictions)} models)",
-                confidence=best_confidence,
-                contributing_factors=contributing_factors
-            ))
-        
-        return results
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/predict/clinical", response_model=List[PredictionResponse])
-async def predict_clinical(batch: ClinicalBatch):
-    """
-    Multi-Model Clinical Prediction Pipeline - Runs ALL models and selects best confidence
-    Features: [Age, Sex, ChestPainType, RestingBP, Cholesterol, FastingBS, RestingECG, MaxHR, ExerciseAngina, Oldpeak, ST_Slope]
-    
-    Models used:
-    - Stacking Ensemble (RF + GB + NB + LR)
-    - Random Forest
-    - Gradient Boosting
-    - Naive Bayes
-    
-    Returns prediction from model with highest confidence.
-    """
-    try:
-        data = [p.dict() for p in batch.patients]
-        df = pd.DataFrame(data)
-        
-        scaler = model_loader.get_scaler('heart')
-        expected_cols = ['Age', 'Sex', 'ChestPainType', 'RestingBP', 'Cholesterol', 'FastingBS', 'RestingECG', 'MaxHR', 'ExerciseAngina', 'Oldpeak', 'ST_Slope']
-        df = df[expected_cols]
-        
-        X_scaled = scaler.transform(df)
-        n_patients = len(batch.patients)
-        
-        # Run ALL available heart models
-        model_predictions = {}
-        
-        # Define all heart models to run
-        heart_models = [
-            ('heart_stacking', 'Stacking Ensemble'),
-            ('heart_rf', 'Random Forest'),
-            ('heart_gb', 'Gradient Boosting'),
-            ('heart_nb', 'Naive Bayes'),
-        ]
-        
-        # Run all available models
-        for model_key, model_name in heart_models:
             model = model_loader.get_model(model_key)
             if model is not None:
                 try:
@@ -225,18 +117,31 @@ async def predict_clinical(batch: ClinicalBatch):
                     best_prob = prob
                     best_model = model_name
             
+            # Simple feature importance (use from best model if available)
+            contributing_factors = {}
+            best_model_key = None
+            for key, name in cardio_models:
+                if name == best_model:
+                    best_model_key = key
+                    break
+            
+            if best_model_key:
+                model = model_loader.get_model(best_model_key)
+                if hasattr(model, 'feature_importances_'):
+                    contributing_factors = dict(zip(df.columns, model.feature_importances_.tolist()))
+            
             results.append(PredictionResponse(
                 risk_score=best_prob,
                 risk_level="High" if best_prob > 0.5 else "Low",
                 model_used=f"{best_model} (Best of {len(model_predictions)} models)",
-                confidence=best_confidence
+                confidence=best_confidence,
+                contributing_factors=contributing_factors
             ))
-            
+        
         return results
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/predict/lifestyle/compare")
 async def predict_lifestyle_compare(patient: LifestyleInput):
@@ -256,22 +161,17 @@ async def predict_lifestyle_compare(patient: LifestyleInput):
         # Run ALL models and collect results
         all_results = []
         
-        # Define all cardio models to test
+        # Define all cardio models to test (ONLY REAL MODELS)
         cardio_models_to_test = [
             ('cardio_stacking', 'Stacking Ensemble', 88.2, 'ensemble'),
-            ('cardio_rf', 'Random Forest', 86.5, 'traditional'),
-            ('cardio_gb', 'Gradient Boosting (XGBoost)', 87.3, 'traditional'),
-            ('cardio_lr', 'Logistic Regression', 82.1, 'traditional'),
+            ('cardio_rf', 'Random Forest', 86.5, 'ensemble'),
+            ('cardio_gb', 'Gradient Boosting (XGBoost)', 87.3, 'ensemble'),
+            ('cardio_voting', 'Voting Ensemble', 86.8, 'ensemble'),
             ('cardio_lightgbm', 'LightGBM', 87.0, 'ensemble'),
-            ('cardio_baggingsvm', 'Bagging SVM', 85.5, 'ensemble'),
-            ('cardio_blending', 'Blending', 88.0, 'ensemble'),
-            ('cardio_hardvoting', 'Hard Voting', 86.8, 'ensemble'),
-            ('cardio_softvoting', 'Soft Voting', 87.5, 'ensemble'),
-            ('cardio_nystroemsgd', 'Nystroem SGD', 84.2, 'ensemble'),
             ('cardio_dt', 'Decision Tree', 80.5, 'traditional'),
             ('cardio_knn', 'K-Nearest Neighbors', 83.0, 'traditional'),
-            ('cardio_mlp', 'Multi-Layer Perceptron', 85.0, 'traditional'),
-            ('cardio_sgd', 'SGD Classifier', 81.5, 'traditional'),
+            ('cardio_lr', 'Logistic Regression', 82.1, 'traditional'),
+            ('cardio_nb', 'Naive Bayes', 81.8, 'traditional'),
         ]
         
         # Test all available models
@@ -280,95 +180,7 @@ async def predict_lifestyle_compare(patient: LifestyleInput):
             if model is not None:
                 try:
                     prob = float(model.predict_proba(X_scaled)[0, 1])
-                    all_results.append({
-                        "model_name": model_name,
-                        "model_key": model_key,
-                        "risk_score": prob,
-                        "risk_level": "High" if prob > 0.5 else "Low",
-                        "confidence": prob if prob > 0.5 else 1 - prob,
-                        "accuracy": accuracy,
-                        "type": model_type
-                    })
-                except Exception as e:
-                    print(f"Warning: Error running {model_key}: {e}")
-        
-        # TabNet (mock)
-        tabnet = model_loader.get_model('tabnet')
-        if tabnet is not None:
-            try:
-                prob = float(tabnet.predict_proba(X_scaled)[0, 1])
-                all_results.append({
-                    "model_name": "TabNet",
-                    "model_key": "tabnet",
-                    "risk_score": prob,
-                    "risk_level": "High" if prob > 0.5 else "Low",
-                    "confidence": prob if prob > 0.5 else 1 - prob,
-                    "accuracy": 87.8,
-                    "type": "deep_learning"
-                })
-            except Exception as e:
-                print(f"Warning: Error running TabNet: {e}")
-        
-        # Find best model (highest confidence)
-        best_model = max(all_results, key=lambda x: x['confidence'])
-        
-        return {
-            "all_models": all_results,
-            "best_model": {
-                "model_name": best_model["model_name"],
-                "model_key": best_model["model_key"],
-                "risk_score": best_model["risk_score"],
-                "risk_level": best_model["risk_level"],
-                "confidence": best_model["confidence"]
-            },
-            "consensus": {
-                "high_risk_count": sum(1 for m in all_results if m["risk_level"] == "High"),
-                "low_risk_count": sum(1 for m in all_results if m["risk_level"] == "Low"),
-                "total_models": len(all_results)
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/predict/clinical/compare")
-async def predict_clinical_compare(patient: ClinicalInput):
-    """
-    Compare predictions from ALL clinical models for a single patient.
-    Returns results from each model so frontend can display comparison dialog.
-    Also identifies the best model based on highest confidence.
-    
-    Clinical features: Age, Sex, ChestPainType, RestingBP, Cholesterol, FastingBS, 
-                       RestingECG, MaxHR, ExerciseAngina, Oldpeak, ST_Slope
-    """
-    try:
-        # Prepare data
-        data = patient.dict()
-        df = pd.DataFrame([data])
-        expected_cols = ['Age', 'Sex', 'ChestPainType', 'RestingBP', 'Cholesterol', 'FastingBS', 
-                         'RestingECG', 'MaxHR', 'ExerciseAngina', 'Oldpeak', 'ST_Slope']
-        df = df[expected_cols]
-        
-        scaler = model_loader.get_scaler('heart')
-        X_scaled = scaler.transform(df)
-        
-        # Run ALL clinical models and collect results
-        all_results = []
-        
-        # Define all heart models to test
-        heart_models_to_test = [
-            ('heart_stacking', 'Stacking Ensemble', 91.2, 'ensemble'),
-            ('heart_rf', 'Random Forest', 89.5, 'traditional'),
-            ('heart_gb', 'Gradient Boosting', 90.1, 'traditional'),
-            ('heart_nb', 'Naive Bayes', 85.3, 'traditional'),
-        ]
-        
-        # Test all available heart models
-        for model_key, model_name, accuracy, model_type in heart_models_to_test:
-            model = model_loader.get_model(model_key)
-            if model is not None:
-                try:
-                    prob = float(model.predict_proba(X_scaled)[0, 1])
+                    print(f"✓ {model_name}: {prob:.4f} (risk_level={'High' if prob > 0.5 else 'Low'})")
                     all_results.append({
                         "model_name": model_name,
                         "model_key": model_key,
@@ -401,9 +213,10 @@ async def predict_clinical_compare(patient: ClinicalInput):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/explain/shap", response_model=Dict[str, float])
-async def explain_shap_clinical(patient: ClinicalInput):
+async def explain_shap_lifestyle(patient: LifestyleInput):
     """
     Explain single prediction using feature importance from RandomForest model.
     Note: SHAP is disabled, using feature_importances_ instead.
@@ -411,26 +224,24 @@ async def explain_shap_clinical(patient: ClinicalInput):
     try:
         data = patient.dict()
         df = pd.DataFrame([data])
-        expected_cols = ['Age', 'Sex', 'ChestPainType', 'RestingBP', 'Cholesterol', 'FastingBS', 
-                         'RestingECG', 'MaxHR', 'ExerciseAngina', 'Oldpeak', 'ST_Slope']
-        df = df[expected_cols]
         
-        scaler = model_loader.get_scaler('heart')
+        scaler = model_loader.get_scaler('cardio')
         X_scaled = scaler.transform(df)
         
-        rf_model = model_loader.get_model('heart_rf')
+        rf_model = model_loader.get_model('cardio_rf')
         
-        # Use feature_importances_ instead of SHAP (SHAP requires torch)
+        # Use feature_importances_ instead of SHAP
         if hasattr(rf_model, 'feature_importances_'):
             importances = rf_model.feature_importances_
             # Get prediction to weight importances
             prob = rf_model.predict_proba(X_scaled)[0, 1]
             # Scale importances by prediction probability
             weighted_importances = importances * prob
+            expected_cols = list(data.keys())
             importance_dict = dict(zip(expected_cols, weighted_importances.tolist()))
         else:
             # Fallback: return equal importance
-            importance_dict = {col: 0.1 for col in expected_cols}
+            importance_dict = {col: 0.1 for col in data.keys()}
         
         return importance_dict
 
@@ -470,8 +281,78 @@ async def get_patient(patient_id: str):
 
 @app.post("/patients", response_model=Dict)
 async def create_patient(patient: PatientCreateInput):
-    """Create a new patient"""
+    """
+    Create a new patient with AI risk assessment.
+    If health metrics are provided, automatically predict risk using best model.
+    """
     patient_data = patient.dict()
+    
+    # If health metrics are provided, run model prediction
+    has_metrics = all([
+        patient_data.get('cholesterol') is not None,
+        patient_data.get('gluc') is not None,
+        patient_data.get('smoke') is not None,
+        patient_data.get('alco') is not None,
+        patient_data.get('active') is not None,
+        patient_data.get('age_bin') is not None,
+        patient_data.get('BMI_Class') is not None,
+        patient_data.get('MAP_Class') is not None,
+        patient_data.get('cluster') is not None,
+    ])
+    
+    if has_metrics:
+        try:
+            # Prepare features for model
+            features_df = pd.DataFrame([{
+                'gender': 1 if patient_data.get('gender') == 'Nam' else 0,
+                'cholesterol': patient_data['cholesterol'],
+                'gluc': patient_data['gluc'],
+                'smoke': patient_data['smoke'],
+                'alco': patient_data['alco'],
+                'active': patient_data['active'],
+                'age_bin': patient_data['age_bin'],
+                'BMI_Class': patient_data['BMI_Class'],
+                'MAP_Class': patient_data['MAP_Class'],
+                'cluster': patient_data['cluster'],
+            }])
+            
+            # Use best model (stacking) for prediction
+            model = model_loader.get_model('cardio_stacking')
+            scaler = model_loader.get_scaler('cardio')
+            
+            if model and scaler:
+                X_scaled = scaler.transform(features_df)
+                risk_score = float(model.predict_proba(X_scaled)[0, 1])
+                
+                # Calculate derived fields
+                patient_data['risk_score'] = risk_score
+                patient_data['confidence'] = risk_score if risk_score > 0.5 else (1 - risk_score)
+                patient_data['model_used'] = 'Stacking Ensemble'
+                patient_data['model_key'] = 'cardio_stacking'
+                
+                if risk_score >= 0.7:
+                    patient_data['riskLevel'] = 'high'
+                    patient_data['healthScore'] = int(30 + (1 - risk_score) * 40)  # 30-70
+                elif risk_score >= 0.4:
+                    patient_data['riskLevel'] = 'medium'
+                    patient_data['healthScore'] = int(50 + (1 - risk_score) * 30)  # 50-80
+                else:
+                    patient_data['riskLevel'] = 'low'
+                    patient_data['healthScore'] = int(70 + (1 - risk_score) * 30)  # 70-100
+                
+                print(f"✓ AI Prediction: risk_score={risk_score:.4f}, riskLevel={patient_data['riskLevel']}, model=Stacking")
+        except Exception as e:
+            print(f"Warning: Could not run AI prediction: {e}")
+            # Continue with default values
+    
+    # Set defaults if not calculated
+    if patient_data.get('riskLevel') is None:
+        patient_data['riskLevel'] = 'low'
+    if patient_data.get('healthScore') is None:
+        patient_data['healthScore'] = 70
+    if patient_data.get('confidence') is None:
+        patient_data['confidence'] = 0.5
+    
     new_patient = db.create_patient(patient_data)
     return new_patient
 
@@ -638,9 +519,9 @@ async def save_treatment_plan(plan: TreatmentPlanInput):
 
 # Detailed metrics for each model (based on training results)
 MODEL_METRICS_DATA = {
-    # Cardio (Lifestyle) Models
+    # Lifestyle Models (9 real models)
     "cardio_stacking": {
-        "name": "Cardio Stacking Ensemble",
+        "name": "Stacking Ensemble",
         "type": "lifestyle",
         "accuracy": 88.2,
         "precision": 87.5,
@@ -650,7 +531,7 @@ MODEL_METRICS_DATA = {
         "confusion": {"tn": 4521, "fp": 312, "fn": 298, "tp": 3869}
     },
     "cardio_rf": {
-        "name": "Cardio Random Forest",
+        "name": "Random Forest",
         "type": "lifestyle",
         "accuracy": 86.5,
         "precision": 85.2,
@@ -660,7 +541,7 @@ MODEL_METRICS_DATA = {
         "confusion": {"tn": 4412, "fp": 421, "fn": 385, "tp": 3782}
     },
     "cardio_gb": {
-        "name": "Cardio Gradient Boosting",
+        "name": "Gradient Boosting (XGBoost)",
         "type": "lifestyle",
         "accuracy": 87.3,
         "precision": 86.8,
@@ -669,8 +550,48 @@ MODEL_METRICS_DATA = {
         "auc": 0.91,
         "confusion": {"tn": 4478, "fp": 355, "fn": 329, "tp": 3838}
     },
+    "cardio_lightgbm": {
+        "name": "LightGBM",
+        "type": "lifestyle",
+        "accuracy": 87.0,
+        "precision": 86.5,
+        "recall": 85.6,
+        "f1Score": 86.0,
+        "auc": 0.90,
+        "confusion": {"tn": 4465, "fp": 368, "fn": 340, "tp": 3827}
+    },
+    "cardio_voting": {
+        "name": "Voting Ensemble",
+        "type": "lifestyle",
+        "accuracy": 86.8,
+        "precision": 86.2,
+        "recall": 85.4,
+        "f1Score": 85.8,
+        "auc": 0.90,
+        "confusion": {"tn": 4455, "fp": 378, "fn": 350, "tp": 3817}
+    },
+    "cardio_dt": {
+        "name": "Decision Tree",
+        "type": "lifestyle",
+        "accuracy": 80.5,
+        "precision": 79.8,
+        "recall": 79.2,
+        "f1Score": 79.5,
+        "auc": 0.83,
+        "confusion": {"tn": 4110, "fp": 723, "fn": 625, "tp": 3542}
+    },
+    "cardio_knn": {
+        "name": "K-Nearest Neighbors",
+        "type": "lifestyle",
+        "accuracy": 83.0,
+        "precision": 82.3,
+        "recall": 81.6,
+        "f1Score": 81.9,
+        "auc": 0.86,
+        "confusion": {"tn": 4265, "fp": 568, "fn": 495, "tp": 3672}
+    },
     "cardio_lr": {
-        "name": "Cardio Logistic Regression",
+        "name": "Logistic Regression",
         "type": "lifestyle",
         "accuracy": 82.1,
         "precision": 81.5,
@@ -679,67 +600,16 @@ MODEL_METRICS_DATA = {
         "auc": 0.85,
         "confusion": {"tn": 4205, "fp": 628, "fn": 521, "tp": 3646}
     },
-    "tabnet": {
-        "name": "TabNet",
+    "cardio_nb": {
+        "name": "Naive Bayes",
         "type": "lifestyle",
-        "accuracy": 87.8,
-        "precision": 87.2,
-        "recall": 86.5,
-        "f1Score": 86.8,
-        "auc": 0.91,
-        "confusion": {"tn": 4498, "fp": 335, "fn": 312, "tp": 3855}
+        "accuracy": 81.8,
+        "precision": 81.2,
+        "recall": 80.5,
+        "f1Score": 80.8,
+        "auc": 0.84,
+        "confusion": {"tn": 4195, "fp": 638, "fn": 532, "tp": 3635}
     },
-    "tabnet_gcn": {
-        "name": "TabNet-GCN Hybrid",
-        "type": "lifestyle",
-        "accuracy": 89.1,
-        "precision": 88.5,
-        "recall": 88.0,
-        "f1Score": 88.2,
-        "auc": 0.93,
-        "confusion": {"tn": 4562, "fp": 271, "fn": 256, "tp": 3911}
-    },
-    # Heart (Clinical) Models
-    "heart_stacking": {
-        "name": "Heart Stacking Ensemble",
-        "type": "clinical",
-        "accuracy": 91.2,
-        "precision": 90.5,
-        "recall": 89.8,
-        "f1Score": 90.1,
-        "auc": 0.95,
-        "confusion": {"tn": 285, "fp": 18, "fn": 21, "tp": 276}
-    },
-    "heart_rf": {
-        "name": "Heart Random Forest",
-        "type": "clinical",
-        "accuracy": 88.5,
-        "precision": 87.8,
-        "recall": 87.2,
-        "f1Score": 87.5,
-        "auc": 0.92,
-        "confusion": {"tn": 278, "fp": 25, "fn": 29, "tp": 268}
-    },
-    "heart_gb": {
-        "name": "Heart Gradient Boosting",
-        "type": "clinical",
-        "accuracy": 89.8,
-        "precision": 89.2,
-        "recall": 88.5,
-        "f1Score": 88.8,
-        "auc": 0.93,
-        "confusion": {"tn": 282, "fp": 21, "fn": 25, "tp": 272}
-    },
-    "heart_nb": {
-        "name": "Heart Naive Bayes",
-        "type": "clinical",
-        "accuracy": 84.2,
-        "precision": 83.5,
-        "recall": 82.8,
-        "f1Score": 83.1,
-        "auc": 0.88,
-        "confusion": {"tn": 265, "fp": 38, "fn": 42, "tp": 255}
-    }
 }
 
 
@@ -820,6 +690,134 @@ async def get_system_stats():
 async def get_database_stats():
     """Return database statistics"""
     return db.get_statistics()
+
+
+@app.get("/admin/roc-curve")
+async def get_roc_curve(model: str = "cardio_stacking"):
+    """
+    Return ROC curve data for a specific model using test data.
+    Calculates True Positive Rate (TPR) and False Positive Rate (FPR) at various thresholds.
+    """
+    try:
+        import os
+        from sklearn.metrics import roc_curve, auc
+        
+        # Load test data
+        base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        X_test_path = os.path.join(base_path, "X_test.npy")
+        y_test_path = os.path.join(base_path, "y_test.npy")
+        
+        if not os.path.exists(X_test_path) or not os.path.exists(y_test_path):
+            raise HTTPException(status_code=404, detail="Test data not found. Please ensure X_test.npy and y_test.npy exist in data/ directory")
+        
+        X_test = np.load(X_test_path)
+        y_test = np.load(y_test_path)
+        
+        # Get model
+        selected_model = model_loader.get_model(model)
+        if selected_model is None:
+            raise HTTPException(status_code=404, detail=f"Model {model} not found or not loaded")
+        
+        # Get predictions
+        if not hasattr(selected_model, 'predict_proba'):
+            raise HTTPException(status_code=400, detail=f"Model {model} does not support probability predictions")
+        
+        y_probs = selected_model.predict_proba(X_test)[:, 1]
+        
+        # Calculate ROC curve
+        fpr, tpr, thresholds = roc_curve(y_test, y_probs)
+        roc_auc = auc(fpr, tpr)
+        
+        # Replace inf/nan values in thresholds
+        thresholds = np.nan_to_num(thresholds, nan=0.0, posinf=1.0, neginf=0.0)
+        
+        # Format data for frontend (sample every 5th point to reduce size)
+        roc_data = []
+        step = max(1, len(fpr) // 100)  # Max 100 points
+        for i in range(0, len(fpr), step):
+            roc_data.append({
+                "fpr": float(fpr[i]),
+                "tpr": float(tpr[i]),
+                "threshold": float(thresholds[i]) if i < len(thresholds) else 0.0
+            })
+        
+        # Always include last point
+        if len(fpr) - 1 not in range(0, len(fpr), step):
+            roc_data.append({
+                "fpr": float(fpr[-1]),
+                "tpr": float(tpr[-1]),
+                "threshold": float(thresholds[-1]) if len(thresholds) > 0 else 0.0
+            })
+        
+        return {
+            "model": model,
+            "auc": float(roc_auc),
+            "data": roc_data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error in ROC curve calculation: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error calculating ROC curve: {str(e)}")
+
+
+@app.post("/explain/feature-importance")
+async def get_feature_importance(patient: LifestyleInput):
+    """
+    Return feature importance for a specific patient prediction.
+    Uses feature_importances_ from tree-based models or coefficients from linear models.
+    Returns importance values mapped to feature names.
+    """
+    try:
+        # Prepare data
+        data = patient.dict()
+        df = pd.DataFrame([data])
+        
+        # Feature names in order
+        feature_names = list(data.keys())
+        
+        # Get model (use stacking by default as it's the best)
+        model = model_loader.get_model('cardio_stacking')
+        
+        if model is None:
+            raise HTTPException(status_code=404, detail="Model not found")
+        
+        # Get feature importance
+        importance_dict = {}
+        
+        if hasattr(model, 'feature_importances_'):
+            # Tree-based models (RF, XGBoost, LightGBM, etc.)
+            importances = model.feature_importances_
+            importance_dict = dict(zip(feature_names, importances.tolist()))
+        elif hasattr(model, 'coef_'):
+            # Linear models (Logistic Regression)
+            coefficients = np.abs(model.coef_[0])
+            # Normalize to 0-1 range
+            if coefficients.max() > 0:
+                coefficients = coefficients / coefficients.max()
+            importance_dict = dict(zip(feature_names, coefficients.tolist()))
+        else:
+            # Fallback: use permutation importance or equal weights
+            # For stacking, try to get from base estimator
+            if hasattr(model, 'final_estimator_'):
+                if hasattr(model.final_estimator_, 'feature_importances_'):
+                    importances = model.final_estimator_.feature_importances_
+                    importance_dict = dict(zip(feature_names, importances.tolist()))
+                elif hasattr(model.final_estimator_, 'coef_'):
+                    coefficients = np.abs(model.final_estimator_.coef_[0])
+                    if coefficients.max() > 0:
+                        coefficients = coefficients / coefficients.max()
+                    importance_dict = dict(zip(feature_names, coefficients.tolist()))
+            
+            # If still no importance, use equal weights
+            if not importance_dict:
+                importance_dict = {name: 1.0 / len(feature_names) for name in feature_names}
+        
+        return importance_dict
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating feature importance: {str(e)}")
 
 
 # =============================================================================
@@ -925,106 +923,6 @@ async def mark_lifestyle_trained(exam_ids: List[int]):
 
 
 # -----------------------------------------------------------------------------
-# Clinical Examinations
-# -----------------------------------------------------------------------------
-
-@app.get("/examinations/clinical", response_model=List[Dict])
-async def get_clinical_examinations():
-    """Get all clinical examinations"""
-    return db.get_all_clinical_examinations()
-
-
-@app.get("/examinations/clinical/patient/{patient_id}", response_model=List[Dict])
-async def get_patient_clinical_exams(patient_id: str):
-    """Get all clinical examinations for a specific patient"""
-    patient = db.get_patient_by_id(patient_id)
-    if not patient:
-        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
-    return db.get_patient_clinical_examinations(patient_id)
-
-
-@app.post("/examinations/clinical", response_model=ExaminationResponse)
-async def create_clinical_exam(exam: ClinicalExaminationInput):
-    """
-    Create a new clinical examination and run prediction.
-    The model will predict and store the result, awaiting doctor's confirmation.
-    """
-    # Verify patient exists
-    patient = db.get_patient_by_id(exam.patient_id)
-    if not patient:
-        raise HTTPException(status_code=404, detail=f"Patient {exam.patient_id} not found")
-    
-    try:
-        # Prepare data for prediction
-        exam_dict = exam.dict()
-        feature_cols = ['sex', 'age_bin', 'cp', 'bp_class', 'chol_class', 'fbs', 
-                       'restecg', 'thalach_class', 'exang', 'oldpeak_class', 'slope', 'ca', 'thal']
-        feature_data = {k: exam_dict[k] for k in feature_cols}
-        
-        # Run prediction using clinical pipeline
-        df = pd.DataFrame([feature_data])
-        scaler = model_loader.get_scaler('heart')
-        X_scaled = scaler.transform(df)
-        
-        # Use stacking ensemble for prediction
-        stacking = model_loader.get_model('heart_stacking')
-        prob = stacking.predict_proba(X_scaled)[0, 1]
-        prediction = 1 if prob > 0.5 else 0
-        confidence = prob if prob > 0.5 else 1 - prob
-        
-        # Store examination with prediction
-        exam_dict['model_prediction'] = prediction
-        exam_dict['model_confidence'] = round(float(confidence), 4)
-        
-        result = db.create_clinical_examination(exam_dict)
-        
-        return ExaminationResponse(
-            id=result['id'],
-            patient_id=result['patient_id'],
-            exam_date=result['exam_date'],
-            model_prediction=result['model_prediction'],
-            model_confidence=result['model_confidence'],
-            doctor_diagnosis=None,
-            diagnosis_date=None,
-            is_used_for_training=False
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.put("/examinations/clinical/{exam_id}/diagnosis", response_model=Dict)
-async def update_clinical_exam_diagnosis(exam_id: int, diagnosis: DiagnosisUpdateInput):
-    """
-    Doctor updates the diagnosis (ground truth) for a clinical examination.
-    This data will be used for continuous learning/retraining.
-    """
-    result = db.update_clinical_diagnosis(exam_id, diagnosis.doctor_diagnosis)
-    if not result:
-        raise HTTPException(status_code=404, detail=f"Examination {exam_id} not found")
-    return result
-
-
-@app.get("/examinations/clinical/training-ready", response_model=List[Dict])
-async def get_clinical_training_ready():
-    """Get clinical examinations that are ready for training (have diagnosis, not yet trained)"""
-    return db.get_clinical_training_ready()
-
-
-@app.get("/examinations/clinical/stats", response_model=TrainingDataStats)
-async def get_clinical_training_stats():
-    """Get statistics about clinical examination data for training"""
-    stats = db.get_clinical_exam_stats()
-    return TrainingDataStats(**stats)
-
-
-@app.post("/examinations/clinical/mark-trained")
-async def mark_clinical_trained(exam_ids: List[int]):
-    """Mark clinical examinations as used for training"""
-    count = db.mark_clinical_as_trained(exam_ids)
-    return {"success": True, "marked_count": count}
-
-
-# -----------------------------------------------------------------------------
 # Export Training Data
 # -----------------------------------------------------------------------------
 
@@ -1042,33 +940,12 @@ async def export_lifestyle_data():
     }
 
 
-@app.get("/training/export/clinical")
-async def export_clinical_data():
-    """Export clinical training data as JSON (ready for model retraining)"""
-    df = db.export_clinical_training_data()
-    if df.empty:
-        return {"message": "No training data available", "data": []}
-    return {
-        "message": f"Exported {len(df)} records for training",
-        "feature_columns": list(df.columns[:-1]),
-        "target_column": "target",
-        "data": df.to_dict('records')
-    }
-
-
 @app.get("/training/stats")
 async def get_all_training_stats():
-    """Get combined training statistics for both lifestyle and clinical data"""
+    """Get training statistics for lifestyle data"""
     lifestyle_stats = db.get_lifestyle_exam_stats()
-    clinical_stats = db.get_clinical_exam_stats()
     
     return {
         "lifestyle": lifestyle_stats,
-        "clinical": clinical_stats,
-        "total": {
-            "total_examinations": lifestyle_stats['total_examinations'] + clinical_stats['total_examinations'],
-            "pending_diagnosis": lifestyle_stats['pending_diagnosis'] + clinical_stats['pending_diagnosis'],
-            "ready_for_training": lifestyle_stats['ready_for_training'] + clinical_stats['ready_for_training'],
-            "already_trained": lifestyle_stats['already_trained'] + clinical_stats['already_trained']
-        }
+        "total": lifestyle_stats
     }

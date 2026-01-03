@@ -120,20 +120,8 @@ export const FeatureImportanceChart = ({ modelType = 'lifestyle' }) => {
         { name: 'Gender', importance: 0.03, fullName: 'Gender' },
     ];
 
-    const clinicalFeatures = [
-        { name: 'cp', importance: 0.22, fullName: 'Chest Pain Type' },
-        { name: 'thalach', importance: 0.18, fullName: 'Max Heart Rate' },
-        { name: 'oldpeak', importance: 0.15, fullName: 'ST Depression' },
-        { name: 'ca', importance: 0.12, fullName: 'Vessels Colored' },
-        { name: 'thal', importance: 0.10, fullName: 'Thalassemia' },
-        { name: 'exang', importance: 0.08, fullName: 'Exercise Angina' },
-        { name: 'slope', importance: 0.06, fullName: 'ST Slope' },
-        { name: 'age', importance: 0.05, fullName: 'Age' },
-        { name: 'sex', importance: 0.02, fullName: 'Sex' },
-        { name: 'fbs', importance: 0.02, fullName: 'Fasting Blood Sugar' },
-    ];
-
-    const features = modelType === 'lifestyle' ? lifestyleFeatures : clinicalFeatures;
+    // Always use lifestyle features (clinical mode removed)
+    const features = lifestyleFeatures;
 
     return (
         <motion.div

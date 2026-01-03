@@ -18,9 +18,8 @@ EVENTS_FILE = os.path.join(DATA_DIR, 'medical_events.csv')
 DOCUMENTS_FILE = os.path.join(DATA_DIR, 'documents.csv')
 TREATMENT_PLANS_FILE = os.path.join(DATA_DIR, 'treatment_plans.csv')
 
-# Continuous Learning - Examination tables
+# Continuous Learning - Examination table (lifestyle only)
 LIFESTYLE_EXAMS_FILE = os.path.join(DATA_DIR, 'lifestyle_examinations.csv')
-CLINICAL_EXAMS_FILE = os.path.join(DATA_DIR, 'clinical_examinations.csv')
 
 
 def ensure_data_dir():
@@ -392,119 +391,6 @@ def get_lifestyle_exam_stats() -> Dict:
 
 
 # =============================================================================
-# CONTINUOUS LEARNING - CLINICAL EXAMINATIONS CRUD
-# =============================================================================
-
-def get_all_clinical_examinations() -> List[Dict]:
-    """Get all clinical examinations"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        return df.to_dict('records')
-    except FileNotFoundError:
-        return []
-
-
-def get_patient_clinical_examinations(patient_id: str) -> List[Dict]:
-    """Get all clinical examinations for a patient"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        exams = df[df['patient_id'] == patient_id]
-        return exams.to_dict('records')
-    except FileNotFoundError:
-        return []
-
-
-def create_clinical_examination(exam_data: Dict) -> Dict:
-    """Create a new clinical examination with model prediction"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        new_id = int(df['id'].max()) + 1 if not df.empty else 1
-    except FileNotFoundError:
-        df = pd.DataFrame()
-        new_id = 1
-    
-    exam_data['id'] = new_id
-    exam_data['doctor_diagnosis'] = None
-    exam_data['diagnosis_date'] = None
-    exam_data['is_used_for_training'] = False
-    exam_data['created_at'] = datetime.now().strftime('%Y-%m-%d')
-    
-    new_df = pd.concat([df, pd.DataFrame([exam_data])], ignore_index=True)
-    new_df.to_csv(CLINICAL_EXAMS_FILE, index=False)
-    
-    return exam_data
-
-
-def update_clinical_diagnosis(exam_id: int, diagnosis: int) -> Optional[Dict]:
-    """Update doctor diagnosis for a clinical examination"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        idx = df[df['id'] == exam_id].index
-        if idx.empty:
-            return None
-        
-        df.loc[idx, 'doctor_diagnosis'] = diagnosis
-        df.loc[idx, 'diagnosis_date'] = datetime.now().strftime('%Y-%m-%d')
-        
-        df.to_csv(CLINICAL_EXAMS_FILE, index=False)
-        return df.loc[idx].iloc[0].to_dict()
-    except FileNotFoundError:
-        return None
-
-
-def get_clinical_training_ready() -> List[Dict]:
-    """Get clinical examinations ready for training (has diagnosis, not yet trained)"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        # Filter: has doctor diagnosis AND not used for training yet
-        ready = df[(df['doctor_diagnosis'].notna()) & (df['is_used_for_training'] == False)]
-        return ready.to_dict('records')
-    except FileNotFoundError:
-        return []
-
-
-def mark_clinical_as_trained(exam_ids: List[int]) -> int:
-    """Mark clinical examinations as used for training"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        count = 0
-        for exam_id in exam_ids:
-            idx = df[df['id'] == exam_id].index
-            if not idx.empty:
-                df.loc[idx, 'is_used_for_training'] = True
-                count += 1
-        
-        df.to_csv(CLINICAL_EXAMS_FILE, index=False)
-        return count
-    except FileNotFoundError:
-        return 0
-
-
-def get_clinical_exam_stats() -> Dict:
-    """Get statistics about clinical examinations for training"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        total = len(df)
-        pending = len(df[df['doctor_diagnosis'].isna()])
-        ready = len(df[(df['doctor_diagnosis'].notna()) & (df['is_used_for_training'] == False)])
-        trained = len(df[df['is_used_for_training'] == True])
-        
-        return {
-            'total_examinations': total,
-            'pending_diagnosis': pending,
-            'ready_for_training': ready,
-            'already_trained': trained
-        }
-    except FileNotFoundError:
-        return {
-            'total_examinations': 0,
-            'pending_diagnosis': 0,
-            'ready_for_training': 0,
-            'already_trained': 0
-        }
-
-
-# =============================================================================
 # EXPORT TRAINING DATA
 # =============================================================================
 
@@ -515,28 +401,9 @@ def export_lifestyle_training_data() -> pd.DataFrame:
         # Filter only records with doctor diagnosis
         training_df = df[df['doctor_diagnosis'].notna()].copy()
         
-        # Select only features needed for training
-        feature_cols = ['gender', 'age_bin', 'BMI_Class', 'MAP_Class', 'cholesterol', 
-                       'gluc', 'smoke', 'alco', 'active', 'history']
-        
-        X = training_df[feature_cols]
-        y = training_df['doctor_diagnosis'].astype(int)
-        
-        return pd.concat([X, y.rename('target')], axis=1)
-    except FileNotFoundError:
-        return pd.DataFrame()
-
-
-def export_clinical_training_data() -> pd.DataFrame:
-    """Export clinical training data in format ready for model training"""
-    try:
-        df = pd.read_csv(CLINICAL_EXAMS_FILE)
-        # Filter only records with doctor diagnosis
-        training_df = df[df['doctor_diagnosis'].notna()].copy()
-        
-        # Select only features needed for training
-        feature_cols = ['sex', 'age_bin', 'cp', 'bp_class', 'chol_class', 'fbs', 
-                       'restecg', 'thalach_class', 'exang', 'oldpeak_class', 'slope', 'ca', 'thal']
+        # Select only features needed for training (matches feature_names.npy order)
+        feature_cols = ['gender', 'cholesterol', 'gluc', 'smoke', 'alco', 'active', 
+                       'age_bin', 'BMI_Class', 'MAP_Class', 'cluster']
         
         X = training_df[feature_cols]
         y = training_df['doctor_diagnosis'].astype(int)

@@ -16,14 +16,22 @@ const BubbleChart = ({ features = [], onFeatureClick }) => {
 
     // Calculate bubble positions using circle packing algorithm
     const bubbleData = useMemo(() => {
-        if (!features.length) return [];
+        if (!features || !Array.isArray(features) || features.length === 0) return [];
 
-        const maxImportance = Math.max(...features.map(f => Math.abs(f.importance)));
+        // Safe importance extraction
+        const safeFeatures = features.map(f => ({
+            ...f,
+            importance: typeof f.importance === 'number' && !isNaN(f.importance) ? f.importance : 0.05
+        }));
+
+        let maxImportance = Math.max(...safeFeatures.map(f => Math.abs(f.importance)));
+        if (maxImportance === 0 || isNaN(maxImportance)) maxImportance = 1;
+
         const minSize = 45;
         const maxSize = 95;
 
         // Sort by importance for better packing (largest first)
-        const sorted = [...features].sort((a, b) =>
+        const sorted = [...safeFeatures].sort((a, b) =>
             Math.abs(b.importance) - Math.abs(a.importance)
         );
 
@@ -31,10 +39,11 @@ const BubbleChart = ({ features = [], onFeatureClick }) => {
         const bubbles = sorted.map((feature, index) => {
             const normalizedSize = Math.abs(feature.importance) / maxImportance;
             const size = minSize + normalizedSize * (maxSize - minSize);
+            const safeSize = isNaN(size) ? minSize : size;
             return {
                 ...feature,
-                size,
-                radius: size / 2,
+                size: safeSize,
+                radius: safeSize / 2,
                 delay: index * 0.1,
             };
         });

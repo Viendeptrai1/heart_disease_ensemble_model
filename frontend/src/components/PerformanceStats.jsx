@@ -32,38 +32,38 @@ const PerformanceStats = ({ metrics }) => {
                     </div>
                 </WidgetCard>
 
-                {/* GNN Accuracy */}
+                {/* Ensemble Models Accuracy */}
                 <WidgetCard
-                    title="Độ chính xác GNN"
+                    title="Độ chính xác Ensemble"
                     className="bg-white/10 px-10 py-10"
                     style={{ borderRadius: '40% 60% 60% 40% / 40% 40% 60% 60%' }}
                 >
                     <div className="flex flex-col space-y-4">
                         <div className="flex justify-between items-center">
-                            <span>Huấn luyện</span>
-                            <span className="font-bold">98.5%</span>
+                            <span>Stacking</span>
+                            <span className="font-bold">88.2%</span>
                         </div>
                         <div className="w-full bg-sand/50 h-2 rounded-full overflow-hidden">
-                            <div className="h-full bg-clay w-[98.5%] rounded-full" />
+                            <div className="h-full bg-clay w-[88.2%] rounded-full" />
                         </div>
                         <div className="flex justify-between items-center">
-                            <span>Kiểm thử</span>
-                            <span className="font-bold">92.1%</span>
+                            <span>XGBoost</span>
+                            <span className="font-bold">87.3%</span>
                         </div>
                         <div className="w-full bg-sand/50 h-2 rounded-full overflow-hidden">
-                            <div className="h-full bg-sage w-[92.1%] rounded-full" />
+                            <div className="h-full bg-sage w-[87.3%] rounded-full" />
                         </div>
                     </div>
                 </WidgetCard>
 
-                {/* SHAP Feature Importance */}
-                <WidgetCard title="Độ quan trọng SHAP">
+                {/* Top Features Importance */}
+                <WidgetCard title="Đặc Trưng Quan Trọng">
                     <div className="flex flex-wrap gap-2">
                         {[
-                            { name: 'Đau ngực', val: 1.0, col: 'bg-clay' },
-                            { name: 'Nhịp tim', val: 0.8, col: 'bg-clay/80' },
-                            { name: 'Mạch máu', val: 0.6, col: 'bg-sage' },
-                            { name: 'Tuổi tác', val: 0.4, col: 'bg-sage/70' }
+                            { name: 'Cholesterol', val: 1.0, col: 'bg-clay' },
+                            { name: 'Huyết áp', val: 0.9, col: 'bg-clay/80' },
+                            { name: 'BMI', val: 0.8, col: 'bg-sage' },
+                            { name: 'Tuổi tác', val: 0.7, col: 'bg-sage/70' }
                         ].map((feature, i) => (
                             <div
                                 key={feature.name}

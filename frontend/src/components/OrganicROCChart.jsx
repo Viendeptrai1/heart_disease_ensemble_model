@@ -14,11 +14,11 @@ import {
  * OrganicROCChart - Fluid ROC/AUC curve with organic styling
  * Uses smooth monotone curves and gradient fills
  */
-const OrganicROCChart = ({ data, auc = 0.91 }) => {
+const OrganicROCChart = ({ data, auc = 0.91, isLoading = false }) => {
     const [activePoint, setActivePoint] = useState(null);
 
-    // Generate mock ROC data only once using useMemo
-    const rocData = useMemo(() => data || generateMockROCData(), [data]);
+    // Use provided data or empty array
+    const rocData = useMemo(() => data || [], [data]);
 
     // Custom tooltip
     const CustomTooltip = ({ active, payload }) => {
@@ -95,79 +95,95 @@ const OrganicROCChart = ({ data, auc = 0.91 }) => {
 
             {/* Chart */}
             <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                        data={rocData}
-                        margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-                        onMouseMove={(e) => {
-                            if (e.activePayload) {
-                                setActivePoint(e.activePayload[0].payload);
-                            }
-                        }}
-                        onMouseLeave={() => setActivePoint(null)}
-                    >
-                        <defs>
-                            {/* Gradient for ROC area */}
-                            <linearGradient id="rocGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#87986A" stopOpacity={0.6} />
-                                <stop offset="50%" stopColor="#87986A" stopOpacity={0.3} />
-                                <stop offset="100%" stopColor="#87986A" stopOpacity={0.05} />
-                            </linearGradient>
-
-                            {/* Glow filter */}
-                            <filter id="rocGlow" x="-50%" y="-50%" width="200%" height="200%">
-                                <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-                                <feMerge>
-                                    <feMergeNode in="coloredBlur" />
-                                    <feMergeNode in="SourceGraphic" />
-                                </feMerge>
-                            </filter>
-                        </defs>
-
-                        {/* Diagonal reference line (random classifier) */}
-                        <ReferenceLine
-                            segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]}
-                            stroke="#D57E5F"
-                            strokeDasharray="5 5"
-                            strokeOpacity={0.5}
+                {isLoading ? (
+                    <div className="flex items-center justify-center h-full">
+                        <motion.div
+                            className="w-12 h-12 rounded-full border-4 border-sage border-t-transparent"
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                         />
+                    </div>
+                ) : rocData.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-moss/60">
+                        <p>Không có dữ liệu ROC curve</p>
+                    </div>
+                ) : (
+                <div style={{ width: '100%', height: '100%' }}>
+                    <ResponsiveContainer>
+                        <AreaChart
+                            data={rocData}
+                            margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                            onMouseMove={(e) => {
+                                if (e.activePayload) {
+                                    setActivePoint(e.activePayload[0].payload);
+                                }
+                            }}
+                            onMouseLeave={() => setActivePoint(null)}
+                        >
+                            <defs>
+                                {/* Gradient for ROC area */}
+                                <linearGradient id="rocGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#87986A" stopOpacity={0.6} />
+                                    <stop offset="50%" stopColor="#87986A" stopOpacity={0.3} />
+                                    <stop offset="100%" stopColor="#87986A" stopOpacity={0.05} />
+                                </linearGradient>
 
-                        <XAxis
-                            dataKey="fpr"
-                            type="number"
-                            domain={[0, 1]}
-                            tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                            tick={{ fontSize: 11, fill: '#4E5B44' }}
-                            axisLine={{ stroke: '#87986A', strokeOpacity: 0.3 }}
-                            tickLine={false}
-                            label={{ value: 'False Positive Rate', position: 'bottom', fontSize: 12, fill: '#4E5B44', offset: -5 }}
-                        />
-                        <YAxis
-                            dataKey="tpr"
-                            type="number"
-                            domain={[0, 1]}
-                            tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                            tick={{ fontSize: 11, fill: '#4E5B44' }}
-                            axisLine={false}
-                            tickLine={false}
-                            label={{ value: 'True Positive Rate', angle: -90, position: 'insideLeft', fontSize: 12, fill: '#4E5B44' }}
-                        />
+                                {/* Glow filter */}
+                                <filter id="rocGlow" x="-50%" y="-50%" width="200%" height="200%">
+                                    <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+                                    <feMerge>
+                                        <feMergeNode in="coloredBlur" />
+                                        <feMergeNode in="SourceGraphic" />
+                                    </feMerge>
+                                </filter>
+                            </defs>
 
-                        <Tooltip content={<CustomTooltip />} />
+                            {/* Diagonal reference line (random classifier) */}
+                            <ReferenceLine
+                                segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]}
+                                stroke="#D57E5F"
+                                strokeDasharray="5 5"
+                                strokeOpacity={0.5}
+                            />
 
-                        {/* ROC Area */}
-                        <Area
-                            type="monotone"
-                            dataKey="tpr"
-                            stroke="#4E5B44"
-                            strokeWidth={3}
-                            fill="url(#rocGradient)"
-                            filter="url(#rocGlow)"
-                            dot={false}
-                            activeDot={<GlowingDot />}
-                        />
-                    </AreaChart>
-                </ResponsiveContainer>
+                            <XAxis
+                                dataKey="fpr"
+                                type="number"
+                                domain={[0, 1]}
+                                tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                                tick={{ fontSize: 11, fill: '#4E5B44' }}
+                                axisLine={{ stroke: '#87986A', strokeOpacity: 0.3 }}
+                                tickLine={false}
+                                label={{ value: 'False Positive Rate', position: 'bottom', fontSize: 12, fill: '#4E5B44', offset: -5 }}
+                            />
+                            <YAxis
+                                dataKey="tpr"
+                                type="number"
+                                domain={[0, 1]}
+                                tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                                tick={{ fontSize: 11, fill: '#4E5B44' }}
+                                axisLine={false}
+                                tickLine={false}
+                                label={{ value: 'True Positive Rate', angle: -90, position: 'insideLeft', fontSize: 12, fill: '#4E5B44' }}
+                            />
+
+                            <Tooltip content={<CustomTooltip />} />
+
+                            {/* ROC Area */}
+                            <Area
+                                type="monotone"
+                                dataKey="tpr"
+                                stroke="#4E5B44"
+                                strokeWidth={3}
+                                fill="url(#rocGradient)"
+                                filter="url(#rocGlow)"
+                                dot={false}
+                                activeDot={<GlowingDot />}
+                            />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+                )}
             </div>
 
             {/* Legend */}
@@ -184,26 +200,5 @@ const OrganicROCChart = ({ data, auc = 0.91 }) => {
         </motion.div>
     );
 };
-
-// Generate mock ROC curve data (deterministic)
-function generateMockROCData() {
-    const data = [];
-    // Simulate a good classifier with AUC ~0.91
-    for (let i = 0; i <= 100; i += 2) {
-        const fpr = i / 100;
-        // Good classifier curve (above diagonal) - use deterministic sine wave for variation
-        const variation = Math.sin(i * 0.5) * 0.02;
-        const tpr = Math.min(1, Math.pow(fpr, 0.3) + variation);
-        data.push({
-            fpr,
-            tpr: Math.max(0, Math.min(1, tpr)),
-            threshold: 1 - fpr,
-        });
-    }
-    // Ensure endpoints
-    data[0] = { fpr: 0, tpr: 0, threshold: 1 };
-    data[data.length - 1] = { fpr: 1, tpr: 1, threshold: 0 };
-    return data;
-}
 
 export default OrganicROCChart;
