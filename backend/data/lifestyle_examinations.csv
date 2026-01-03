@@ -1,0 +1,6 @@
+id,patient_id,exam_date,gender,age_bin,BMI_Class,MAP_Class,cholesterol,gluc,smoke,alco,active,history,model_prediction,model_confidence,doctor_diagnosis,diagnosis_date,is_used_for_training,created_at
+1,BN-2024-0001,2024-12-15,1,3,2,2,2,1,0,0,1,1,1,0.78,1.0,2025-12-21,,2024-12-15
+2,BN-2024-0001,2024-11-20,1,3,2,2,2,1,0,0,1,1,1,0.82,1.0,2024-12-01,False,2024-11-20
+3,BN-2024-0002,2024-12-10,0,2,1,1,1,1,0,0,1,0,0,0.85,0.0,2024-12-15,False,2024-12-10
+4,BN-2024-0003,2024-12-12,1,3,2,3,2,2,0,1,0,1,1,0.71,1.0,2025-12-21,,2024-12-12
+5,BN-2024-0004,2024-12-08,0,2,3,3,3,2,0,0,1,1,1,0.88,1.0,2024-12-10,False,2024-12-08

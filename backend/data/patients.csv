@@ -1,0 +1,12 @@
+id,name,age,gender,phone,address,blood_type,riskLevel,healthScore,confidence,created_at
+BN-2024-0001,Nguyễn Văn Minh,58,Nam,901234567,123 Nguyễn Huệ Q.1 TP.HCM,O+,high,68,0.92,2024-01-15
+BN-2024-0002,Trần Thị Lan,45,Nữ,912345678,456 Lê Lợi Q.3 TP.HCM,A+,low,82,0.85,2024-02-20
+BN-2024-0003,Lê Hoàng Nam,62,Nam,923456789,789 Hai Bà Trưng Q.1 TP.HCM,B+,medium,55,0.78,2024-03-10
+BN-2024-0004,Phạm Thị Hoa,51,Nữ,934567890,321 Võ Văn Tần Q.3 TP.HCM,AB+,high,42,0.88,2024-03-25
+BN-2024-0005,Võ Văn Thành,67,Nam,945678901,654 Điện Biên Phủ Q.Bình Thạnh,O-,medium,60,0.75,2024-04-05
+BN-2024-0006,Đặng Thị Mai,49,Nữ,956789012,987 Cách Mạng Tháng 8 Q.10,A-,low,88,0.91,2024-04-18
+BN-2024-0007,Hoàng Văn Đức,71,Nam,967890123,147 Trần Hưng Đạo Q.5,B-,high,38,0.95,2024-05-02
+BN-2024-0008,Lý Thị Hương,55,Nữ,978901234,258 Nguyễn Thị Minh Khai Q.1,AB-,medium,65,0.82,2024-05-20
+BN-2024-0009,Bùi Văn Tùng,60,Nam,989012345,369 Lý Thường Kiệt Q.Tân Bình,O+,high,45,0.89,2024-06-08
+BN-2024-0010,Ngô Thị Xuân,48,Nữ,990123456,741 Phan Xích Long Q.Phú Nhuận,A+,low,85,0.87,2024-06-25
+BN-2025-0011,Xe oto,60,Nam,,,A+,low,100,0.9993930904893205,2025-12-20

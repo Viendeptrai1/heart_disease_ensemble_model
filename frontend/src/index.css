@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --color-sand: #F5F2ED;
+  --color-sage: #87986A;
+  --color-clay: #D57E5F;
+  --color-moss: #4E5B44;
+
+  --font-sans: "M PLUS Rounded 1c", ui-rounded, sans-serif;
+
+  --radius-blob-1: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  --radius-blob-2: 30% 70% 70% 30% / 30% 30% 70% 70%;
+  --radius-blob-3: 50% 50% 20% 80% / 25% 80% 20% 75%;
+
+  --animate-breathing: breathing 4s ease-in-out infinite;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes breathing {
+
+    0%,
+    100% {
+      transform: scale(1);
+    }
+
+    50% {
+      transform: scale(1.05);
+    }
+  }
+
+  @keyframes float {
+
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+}
+
+/* Custom Utilities */
+.gooey {
+  filter: url(#gooey);
+}
+
+.glass {
+  @apply backdrop-blur-xl bg-white/20 border border-white/30 shadow-lg;
+}
+
+/* Base Styles */
+body {
+  @apply bg-sand text-moss font-sans antialiased overflow-y-auto;
+}
+
+/* Custom Scrollbar - Living Earth Style */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(135, 152, 106, 0.1);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(135, 152, 106, 0.4) 0%, rgba(135, 152, 106, 0.6) 100%);
+  border-radius: 10px;
+  transition: background 0.3s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(135, 152, 106, 0.6) 0%, rgba(135, 152, 106, 0.8) 100%);
+}
+
+/* Firefox scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(135, 152, 106, 0.5) rgba(135, 152, 106, 0.1);
+}

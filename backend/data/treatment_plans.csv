@@ -1,0 +1,5 @@
+id,patient_id,treatments,notes,status,created_at,updated_at
+1,BN-2024-0001,"tx1,tx3,tx5","Theo dõi huyết áp hàng ngày;Tái khám sau 2 tuần",active,2024-12-15,2024-12-15
+2,BN-2024-0004,"tx1,tx2,tx3,tx4","Giảm muối trong chế độ ăn;Tập thể dục nhẹ 30 phút/ngày",active,2024-12-10,2024-12-12
+3,BN-2024-0007,"tx1,tx5,tx7,tx8","Phục hồi chức năng tim sau mổ;Theo dõi vết mổ",active,2024-12-10,2024-12-15
+4,BN-2024-0003,"tx1,tx7","Uống thuốc đúng giờ;Đo huyết áp 2 lần/ngày",active,2024-12-12,2024-12-12
